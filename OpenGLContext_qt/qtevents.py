@@ -21,7 +21,7 @@ class EventHandlerMixin( eventhandlermixin.EventHandlerMixin):
         """Convert event to context-style event"""
         self.ProcessEvent( QtKeyboardEvent( self, event, 0 ))
         if event.text():
-            QtKeypressEvent( self, event )
+            self.ProcessEvent( QtKeypressEvent( self, event ) )
         self.triggerRedraw(1)
         # TODO: only accept if we have a binding...
 #        event.accept()
@@ -55,7 +55,7 @@ class QtXEvent(object):
         if key in keyboardMapping:
             name = keyboardMapping[key] 
         else:
-            name = qtEvent.text()
+            name = unicode(qtEvent.text())
         return name
     BUTTON_MAPPING = ( 
         (0,QtCore.Qt.LeftButton), 

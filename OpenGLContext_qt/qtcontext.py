@@ -10,7 +10,7 @@ from OpenGLContext import contextdefinition
 from OpenGLContext import interactivecontext
 from OpenGLContext.move import viewplatformmixin
 from OpenGLContext import vrmlcontext
-import qtevents
+from OpenGLContext_qt import qtevents
 from PyQt4 import QtCore, QtGui, QtOpenGL, Qt
 import sys 
 
@@ -83,7 +83,6 @@ class QtContext(
         self.makeCurrent()
     def SwapBuffers (self,):
         """Implementation: swap the buffers"""
-        print 'calling swap'
         self.swapBuffers()
     @classmethod
     def ContextMainLoop( cls, *args, **named ):
