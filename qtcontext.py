@@ -7,10 +7,15 @@ your code that uses this package will likely be constrained by the GPL!
 from OpenGL.GL import *
 from OpenGLContext.context import Context
 from OpenGLContext import contextdefinition
-from PyQt4 import QtCore, QtGui, QtOpenGL
+import qtevents
+from PyQt4 import QtCore, QtGui, QtOpenGL, Qt
 import sys 
 
-class QtContext( QtOpenGL.QGLWidget, Context):
+class QtContext( 
+    qtevents.EventHandlerMixin, 
+    QtOpenGL.QGLWidget, 
+    Context
+):
     """Base class for all Qt-based contexts"""
     def __init__ (self, definition = None, parent=None, **named ):
         # set up double buffering and rgb display mode
@@ -24,6 +29,7 @@ class QtContext( QtOpenGL.QGLWidget, Context):
             self.formatFromDefinition( definition ), 
             parent,
         )
+        self.setAutoBufferSwap( False )
         Context.__init__ (self, definition)
     
     @classmethod
@@ -46,17 +52,35 @@ class QtContext( QtOpenGL.QGLWidget, Context):
                     vset( df )
         return format
     
-    def addEventHandler( self, *args, **named ):
-        pass
+    def setupCallbacks( self ):
+        """Setup our Qt-level callbacks"""
+        self.setFocusPolicy( QtCore.Qt.StrongFocus )
     
+    def addEventHandler( self, *args, **named ):
+        """Contexts shouldn't need this, but it makes it easier..."""
+        
+#    def paintEvent( self, event ):
+#        """Could override, but not really necessary"""
+#    def resizeEvent( self, event ):
+#        """Could override, but not really necessary"""
     def paintGL(self):
         """Handle paint event for the context"""
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
+        self.triggerRedraw(1)
     def resizeGL(self, width, height):
         """Handle resize event for the context"""
-        print 'resize', width,height
-    
+        self.setCurrent()
+        try:
+            self.ViewPort( width, height )
+        finally:
+            self.unsetCurrent()
+        self.triggerRedraw(1)
+    def setCurrent (self):
+        ''' Acquire the GL "focus" '''
+        Context.setCurrent( self )
+        self.makeCurrent()
+    def SwapBuffers (self,):
+        """Implementation: swap the buffers"""
+        self.swapBuffers()
     @classmethod
     def ContextMainLoop( cls, *args, **named ):
         """Mainloop for the GLUT testing context"""
