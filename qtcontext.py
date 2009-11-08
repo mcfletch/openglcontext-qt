@@ -7,6 +7,9 @@ your code that uses this package will likely be constrained by the GPL!
 from OpenGL.GL import *
 from OpenGLContext.context import Context
 from OpenGLContext import contextdefinition
+from OpenGLContext import interactivecontext
+from OpenGLContext.move import viewplatformmixin
+from OpenGLContext import vrmlcontext
 import qtevents
 from PyQt4 import QtCore, QtGui, QtOpenGL, Qt
 import sys 
@@ -54,23 +57,23 @@ class QtContext(
     
     def setupCallbacks( self ):
         """Setup our Qt-level callbacks"""
+        super( QtContext, self ).setupCallbacks()
         self.setFocusPolicy( QtCore.Qt.StrongFocus )
-    
-    def addEventHandler( self, *args, **named ):
-        """Contexts shouldn't need this, but it makes it easier..."""
+        # TODO: only set mouse tracking if we have handlers for it
+        self.setMouseTracking(True)
         
-#    def paintEvent( self, event ):
-#        """Could override, but not really necessary"""
-#    def resizeEvent( self, event ):
-#        """Could override, but not really necessary"""
-    def paintGL(self):
-        """Handle paint event for the context"""
+    
+    def paintEvent( self, event ):
+        """Could override, but not really necessary"""
+        #self.setCurrent()
         self.triggerRedraw(1)
-    def resizeGL(self, width, height):
-        """Handle resize event for the context"""
+        #self.swapBuffers()
+    def resizeEvent( self, event ):
+        """Could override, but not really necessary"""
+        size = event.size()
         self.setCurrent()
         try:
-            self.ViewPort( width, height )
+            self.ViewPort( size.width(), size.height() )
         finally:
             self.unsetCurrent()
         self.triggerRedraw(1)
@@ -80,6 +83,7 @@ class QtContext(
         self.makeCurrent()
     def SwapBuffers (self,):
         """Implementation: swap the buffers"""
+        print 'calling swap'
         self.swapBuffers()
     @classmethod
     def ContextMainLoop( cls, *args, **named ):
@@ -89,7 +93,24 @@ class QtContext(
         widget.resize(640, 480)
         widget.show()
         sys.exit(app.exec_())
-    
+
+class QtInteractiveContext (
+	viewplatformmixin.ViewPlatformMixin,
+	interactivecontext.InteractiveContext,
+	QtContext,
+):
+	'''Qt context providing camera, mouse and keyboard interaction '''
+
+class VRMLContext(
+	vrmlcontext.VRMLContext,
+	QtInteractiveContext
+):
+	"""GLUT-specific VRML97-aware Testing Context"""
+
 
 if __name__ == "__main__":
-    QtContext.ContextMainLoop()
+    import os
+    class TestContext( VRMLContext ):
+        def OnInit( self ):
+            self.load( sys.argv[1] )
+    TestContext.ContextMainLoop()

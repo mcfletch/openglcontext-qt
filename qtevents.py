@@ -12,43 +12,31 @@ class EventHandlerMixin( eventhandlermixin.EventHandlerMixin):
     module).
     """
     ### KEYBOARD interactions
-    
     def keyPressEvent(self, event ):
         """Convert event to context-style event"""
         self.ProcessEvent( QtKeyboardEvent( self, event, 1 ))
+        self.triggerRedraw(1)
+#        event.accept()
     def keyReleaseEvent( self, event ):
         """Convert event to context-style event"""
         self.ProcessEvent( QtKeyboardEvent( self, event, 0 ))
         if event.text():
             QtKeypressEvent( self, event )
+        self.triggerRedraw(1)
         # TODO: only accept if we have a binding...
-        event.accept()
+#        event.accept()
         
-    def mousePressEvent(self, event):
-        """Convert event to context-style event"""
     def mouseMoveEvent(self, event):
         """Convert event to context-style event"""
+        self.addPickEvent( QtMouseMoveEvent( self, event ))
+        self.triggerPick()
+    def mousePressEvent(self, event):
+        """Convert event to context-style event"""
+        self.addPickEvent( QtMouseButtonEvent( self, event, state=True ))
+        self.triggerPick()
     def mouseReleaseEvent( self, event):
         """Convert event to context-style event"""
-        
-    def wxOnKeyDown( self, event ):
-        '''Convert a key-press to a context-style event'''
-        self.ProcessEvent( wxKeyboardEvent( self, event, 1))
-        event.Skip()
-    def wxOnKeyUp( self, event ):
-        '''Convert a key-release to a context-style event'''
-        self.ProcessEvent( wxKeyboardEvent( self, event, 0))
-    def wxOnCharacter( self, event ):
-        """Convert character (non-control) press to context event"""
-        self.ProcessEvent( wxKeypressEvent( self, event))
-    ### MOUSE Interaction
-    def wxOnMouseButton(self, event ):
-        """Convert mouse-button event to context event"""
-        self.addPickEvent( wxMouseButtonEvent( self, event))
-        self.triggerPick()
-    def wxOnMouseMove(self, event ):
-        """Convert mouse-movement event to context event"""
-        self.addPickEvent( wxMouseMoveEvent( self, event))
+        self.addPickEvent( QtMouseButtonEvent( self, event, state=False ))
         self.triggerPick()
 
 class QtXEvent(object):
@@ -69,43 +57,46 @@ class QtXEvent(object):
         else:
             name = qtEvent.text()
         return name
+    BUTTON_MAPPING = ( 
+        (0,QtCore.Qt.LeftButton), 
+        (1,QtCore.Qt.MidButton), 
+        (2,QtCore.Qt.RightButton),
+    )
+    def _getButton( self, qtEvent ):
+        buttons = qtEvent.button()
+        for local, marker in self.BUTTON_MAPPING:
+            if buttons & marker:
+                return local 
+        return None
+    def _getButtons( self, qtEvent ):
+        buttons = qtEvent.buttons()
+        pressed = []
+        for local, marker in self.BUTTON_MAPPING:
+            if buttons & marker:
+                pressed.append( local )
+        return tuple(pressed)
+
+class QtMouseButtonEvent( QtXEvent, mouseevents.MouseButtonEvent ):
+    """Qt-specific mouse button event"""
+    BUTTON_MAPPING = ( (0,1), (1,3), (2,2))
+    def __init__( self, context, qtEvent, state=0 ):
+        super (QtMouseButtonEvent, self).__init__()
+        if hasattr( context, 'currentPass'):
+            self.renderingPass = context.currentPass
+        self.modifiers = self._getModifiers(qtEvent)
+        self.button = self._getButton(qtEvent)
+        self.state = state
+        self.pickPoint = qtEvent.x(), context.getViewPort()[1]- qtEvent.y()
         
-#
-#class wxMouseButtonEvent( wxXEvent, mouseevents.MouseButtonEvent ):
-#    """wxPython-specific mouse button event"""
-#    BUTTON_MAPPING = ( (0,1), (1,3), (2,2))
-#    def __init__( self, context, wxEventObject ):
-#        super (wxMouseButtonEvent, self).__init__()
-#        if hasattr( context, 'currentPass'):
-#            self.renderingPass = context.currentPass
-#        self.modifiers = self._getModifiers(wxEventObject)
-#        self.button = None
-#        for local, wx in self.BUTTON_MAPPING:
-#            if wx == wxEventObject.Button:
-#                self.button = local
-#                self.state = wxEventObject.ButtonDown( wx )
-#                break 
-#        if self.button is None:
-#            for local,wx in self.self.BUTTON_MAPPING:
-#                if wxEventObject.Button( wx ):
-#                    self.button = local
-#                    self.state = wxEventObject.ButtonDown( wx )
-#                    break
-#        self.pickPoint = wxEventObject.GetX(), context.getViewPort()[1]- wxEventObject.GetY()
-#        
-#class wxMouseMoveEvent( wxXEvent, mouseevents.MouseMoveEvent ):
-#    """wxPython-specific mouse movement event"""
-#    def __init__( self, context, wxEventObject ):
-#        super (wxMouseMoveEvent, self).__init__()
-#        if hasattr( context, 'currentPass'):
-#            self.renderingPass = context.currentPass
-#        self.modifiers = self._getModifiers(wxEventObject)
-#        buttons = []
-#        for local, method in ( (0,"LeftIsDown"), (1,"MiddleIsDown"), (2,"RightIsDown")):
-#            if getattr( wxEventObject, method )():
-#                buttons.append( local )
-#        self.buttons = tuple( buttons )
-#        self.pickPoint = wxEventObject.GetX(), context.getViewPort()[1]- wxEventObject.GetY()
+class QtMouseMoveEvent( QtXEvent, mouseevents.MouseMoveEvent ):
+    """Qt-specific mouse movement event"""
+    def __init__( self, context, qtEvent ):
+        super (QtMouseMoveEvent, self).__init__()
+        if hasattr( context, 'currentPass'):
+            self.renderingPass = context.currentPass
+        self.modifiers = self._getModifiers(qtEvent)
+        self.buttons = self._getButtons(qtEvent)
+        self.pickPoint = qtEvent.x(), context.getViewPort()[1]- qtEvent.y()
 
 class QtKeyboardEvent( QtXEvent, keyboardevents.KeyboardEvent ):
     """Qt-specific keyboard event"""
