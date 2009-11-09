@@ -1,2 +1,5 @@
 PyQt-x11-gpl-4.6.1
 .eric4project
+dist
+build
+MANIFEST
