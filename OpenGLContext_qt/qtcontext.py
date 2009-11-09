@@ -33,6 +33,7 @@ class QtContext(
             parent,
         )
         self.setAutoBufferSwap( False )
+        self.resize( *definition.size )
         Context.__init__ (self, definition)
     
     @classmethod
@@ -62,14 +63,21 @@ class QtContext(
         # TODO: only set mouse tracking if we have handlers for it
         self.setMouseTracking(True)
         
-    
     def paintEvent( self, event ):
-        """Could override, but not really necessary"""
-        #self.setCurrent()
         self.triggerRedraw(1)
-        #self.swapBuffers()
+    
+    def triggerRedraw( self, force=False ):
+        """Override triggerRedraw to do an update call..."""
+        result = super( QtContext, self ).triggerRedraw( force )
+        if force:
+            # TODO: this should *not* be working this way, as it 
+            # causes 100% CPU usage, basically there's no idle processing
+            # so we have to trigger the next event cascade when we're 
+            # done with this one...
+            self.update()
+        return result
+    
     def resizeEvent( self, event ):
-        """Could override, but not really necessary"""
         size = event.size()
         self.setCurrent()
         try:
@@ -84,27 +92,31 @@ class QtContext(
     def SwapBuffers (self,):
         """Implementation: swap the buffers"""
         self.swapBuffers()
+    
+    def ProcessEvent( self, event ):
+        result = super( QtContext, self ).ProcessEvent( event )
+        return result 
+    
     @classmethod
     def ContextMainLoop( cls, *args, **named ):
         """Mainloop for the GLUT testing context"""
         app = QtGui.QApplication(sys.argv)
         widget = cls(None)
-        widget.resize(640, 480)
         widget.show()
         sys.exit(app.exec_())
 
 class QtInteractiveContext (
-	viewplatformmixin.ViewPlatformMixin,
-	interactivecontext.InteractiveContext,
-	QtContext,
+    viewplatformmixin.ViewPlatformMixin,
+    interactivecontext.InteractiveContext,
+    QtContext,
 ):
-	'''Qt context providing camera, mouse and keyboard interaction '''
+    '''Qt context providing camera, mouse and keyboard interaction '''
 
 class VRMLContext(
-	vrmlcontext.VRMLContext,
-	QtInteractiveContext
+    vrmlcontext.VRMLContext,
+    QtInteractiveContext
 ):
-	"""GLUT-specific VRML97-aware Testing Context"""
+    """GLUT-specific VRML97-aware Testing Context"""
 
 
 if __name__ == "__main__":
