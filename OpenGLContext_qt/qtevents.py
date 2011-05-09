@@ -1,6 +1,9 @@
 """Module providing translation from wxPython events to OpenGLContext events"""
 from OpenGLContext.events import mouseevents, keyboardevents, eventhandlermixin
-from PyQt4 import QtCore, QtGui, QtOpenGL
+try:
+    from PySide import QtCore, QtGui, QtOpenGL
+except ImportError, err:
+    from PyQt4 import QtCore, QtGui, QtOpenGL
 import time
 
 class EventHandlerMixin( eventhandlermixin.EventHandlerMixin):

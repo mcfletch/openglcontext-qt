@@ -11,7 +11,10 @@ from OpenGLContext import interactivecontext
 from OpenGLContext.move import viewplatformmixin
 from OpenGLContext import vrmlcontext
 from OpenGLContext_qt import qtevents
-from PyQt4 import QtCore, QtGui, QtOpenGL, Qt
+try:
+    from PySide import QtCore, QtGui, QtOpenGL
+except ImportError, err:
+    from PyQt4 import QtCore, QtGui, QtOpenGL
 import sys 
 
 class QtContext( 
