@@ -25,12 +25,7 @@ class QtContext(
     """Base class for all Qt-based contexts"""
     def __init__ (self, definition = None, parent=None, **named ):
         # set up double buffering and rgb display mode
-        if definition is None:
-            definition = contextdefinition.ContextDefinition( **named )
-        else:
-            for key,value in named.items():
-                setattr( definition, key, value )
-        self.contextDefinition = definition
+        definition = self.setDefinition( definition )
         super(QtContext, self).__init__(
             self.formatFromDefinition( definition ), 
             parent,
@@ -43,6 +38,16 @@ class QtContext(
     def formatFromDefinition( cls, definition ):
         """Create a QGLFormat from definition parameters"""
         format = QtOpenGL.QGLFormat.defaultFormat()
+        if hasattr( format, 'setProfile' ):
+            if definition.profile == 'compatibility':
+                format.setProfile( QtOpenGL.QGLFormat.CompatibilityProfile )
+            elif definition.profile == 'core':
+                format.setVersion( 3, 3 )
+                format.setProfile( QtOpenGL.QGLFormat.CoreProfile )
+            else:
+                raise ValueError( "Unrecognized profile: %r", definition.profile )
+        elif definition.profile != 'compatibility':
+            raise RuntimeError( 'Unable to set profile, Qt needs version 4.8+ to set profile' )
         format.setDoubleBuffer(bool(definition.doubleBuffer))
         format.setStereo(definition.stereo)
         for (df,bset,vset) in [
@@ -104,7 +109,7 @@ class QtContext(
     def ContextMainLoop( cls, *args, **named ):
         """Mainloop for the GLUT testing context"""
         app = QtGui.QApplication(sys.argv)
-        widget = cls(None)
+        widget = cls(*args,**named)
         widget.show()
         sys.exit(app.exec_())
 
