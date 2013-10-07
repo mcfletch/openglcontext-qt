@@ -9,7 +9,7 @@ instead of a VRMLContext, though the VRMLContext will do more
 setup/registration when used than the QtContext.
 """
 from OpenGLContext.plugins import Context,InteractiveContext,VRMLContext
-__version__ = '1.0.0a2'
+__version__ = '1.0.0a3'
 Context( 
     'qt', 'OpenGLContext_qt.qtcontext.QtContext',
 )
