@@ -42,7 +42,9 @@ class QtContext(
             if definition.profile == 'compatibility':
                 format.setProfile( QtOpenGL.QGLFormat.CompatibilityProfile )
             elif definition.profile == 'core':
-                format.setVersion( 3, 3 )
+                if not definition.version[0]:
+                    definition.version = [3,3]
+                format.setVersion( *definition.version )
                 format.setProfile( QtOpenGL.QGLFormat.CoreProfile )
             else:
                 raise ValueError( "Unrecognized profile: %r", definition.profile )
