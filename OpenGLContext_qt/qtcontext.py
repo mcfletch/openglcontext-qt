@@ -6,14 +6,14 @@ your code that uses this package will likely be constrained by the GPL!
 """
 from OpenGL.GL import *
 from OpenGLContext.context import Context
-from OpenGLContext import contextdefinition
+#from OpenGLContext import contextdefinition
 from OpenGLContext import interactivecontext
 from OpenGLContext.move import viewplatformmixin
 from OpenGLContext import vrmlcontext
 from OpenGLContext_qt import qtevents
 try:
     from PySide import QtCore, QtGui, QtOpenGL
-except ImportError, err:
+except ImportError as err:
     from PyQt4 import QtCore, QtGui, QtOpenGL
 import sys 
 
@@ -130,7 +130,6 @@ class VRMLContext(
 
 
 if __name__ == "__main__":
-    import os
     class TestContext( VRMLContext ):
         def OnInit( self ):
             self.load( sys.argv[1] )

@@ -52,7 +52,7 @@ using the OpenGLContext plugin system.
 	setup (
 		name = "OpenGLContext_qt",
 		version = version,
-		description = "PyQt4/PySide context for OpenGLContext",
+		description = "PySide (or PyQt4) context for OpenGLContext",
 		author = "Mike C. Fletcher",
 		author_email = "mcfletch@users.sourceforge.net",
 		url = "http://pyopengl.sourceforge.net/context/",
