@@ -1,126 +1,688 @@
-#! /usr/bin/env python
-"""PyQt/PySide OpenGLContext plug-in
+"""Context functionality using the Qt windowing API, through PySide6
 
-Note that this code is BSD licenced, but that PyQT is GPL licenced,
-your code that uses this package will likely be constrained by the (L)GPL!
+Registered with OpenGLContext's plugin system as the ``qt`` backend, so
+``OPENGLCONTEXT_BACKEND=qt`` selects it wherever a context is chosen by name.
+
+**The window is a** :class:`~PySide6.QtGui.QWindow` **with a**
+:class:`~PySide6.QtGui.QOpenGLContext` **of its own, not a**
+``QOpenGLWidget``.  A ``QOpenGLWidget`` renders into a framebuffer object that
+Qt then composites, so *its* screen is not framebuffer 0 -- and OpenGLContext's
+render passes bind framebuffer 0 whenever they finish with one of their own
+(the bloom composite, the selection buffer's blit, the back-buffer read behind
+every screenshot).  Under a ``QOpenGLWidget`` each of those would quietly go to
+the wrong target.  A ``QWindow`` draws to a real window surface, where
+framebuffer 0 is the screen and ``swapBuffers`` is a swap, so every render path
+behaves exactly as it does under the GLUT and GLFW backends.  To place the view
+in a widget layout, wrap it with :meth:`QtContext.container`.
+
+**PyOpenGL speaks desktop OpenGL**, so the surface format asks for it by name.
+Qt's default renderable type is whatever the platform integration prefers,
+which under EGL -- Wayland, and X11 on many drivers -- is OpenGL ES; asking for
+a core profile without saying "desktop" fails outright there, and the ES
+context that a request without a profile produces has none of the entry points
+this engine calls.
 """
 
-from OpenGL.GL import *
-from OpenGLContext.context import Context
+import logging
+import os
+import sys
+import time
 
-# from OpenGLContext import contextdefinition
-from OpenGLContext import interactivecontext
+from OpenGLContext import interactivecontext, vrmlcontext
+from OpenGLContext.context import Context
+from OpenGLContext.looptrace import LoopTrace
 from OpenGLContext.move import viewplatformmixin
-from OpenGLContext import vrmlcontext
+from PySide6 import QtCore, QtGui
+
 from OpenGLContext_qt import qtevents
 
-try:
-    from PySide import QtCore, QtGui, QtOpenGL
-except ImportError as err:
-    from PyQt4 import QtCore, QtGui, QtOpenGL
-import sys
+log = logging.getLogger(__name__)
+
+#: Colour channel depth requested for an RGB(A) window.  Qt takes each channel
+#: separately where ``ContextDefinition`` has a single ``rgb`` flag.
+COLOUR_BITS = 8
+
+#: OpenGL version used when a core profile is asked for without one.  The
+#: shaders OpenGLContext ships target ``#version 330 core``.
+CORE_VERSION = (3, 3)
+
+#: How long :meth:`QtContext.waitForExposure` will wait for the compositor to
+#: give the new window a surface before giving up and letting the first expose
+#: event finish the job.
+EXPOSURE_TIMEOUT = 2.0
+
+#: Asks the other backends for a window that renders without being mapped, for
+#: headless capture.  Qt has no equivalent -- its offscreen surfaces have no
+#: default framebuffer on the common EGL platforms -- so this backend says so
+#: rather than quietly opening a window on somebody's screen.
+HIDDEN_ENV = 'OPENGLCONTEXT_HIDDEN'
 
 
-class QtContext(qtevents.EventHandlerMixin, QtOpenGL.QGLWidget, Context):
-    """Base class for all Qt-based contexts"""
+def hiddenRequested():
+    """Whether the environment asked for a window nobody can see"""
+    return os.environ.get(HIDDEN_ENV, '').strip().lower() in (
+        '1', 'true', 'yes', 'on')
+
+
+def surfaceFormatFromDefinition(definition):
+    """Build the :class:`~PySide6.QtGui.QSurfaceFormat` a ContextDefinition asks for
+
+    Every field of the definition that describes the *window* rather than the
+    rendering is mapped here; the rendering features (shadows, bloom, IBL and
+    the rest) are read from the definition by the render passes themselves.
+
+    ``accumulationBuffer`` has no Qt equivalent -- Qt 6 dropped it along with
+    the fixed-function pipeline that used it -- and is reported rather than
+    silently ignored, since a caller asking for one is asking for something
+    this window will not have.
+    """
+    format = QtGui.QSurfaceFormat()
+    format.setRenderableType(QtGui.QSurfaceFormat.RenderableType.OpenGL)
+
+    major, minor = int(definition.version[0]), int(definition.version[1])
+    if definition.profile == "core":
+        if (major, minor) < CORE_VERSION:
+            major, minor = CORE_VERSION
+        format.setVersion(major, minor)
+        format.setProfile(QtGui.QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    elif definition.profile == "compatibility":
+        if major:
+            format.setVersion(major, minor)
+            # Below GL 3.0 there are no profiles to choose between, and naming
+            # one makes the request stricter for no gain.
+            if major >= 3:
+                format.setProfile(
+                    QtGui.QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile
+                )
+    else:
+        raise ValueError("Unrecognised profile: %r" % (definition.profile,))
+
+    format.setSwapBehavior(
+        QtGui.QSurfaceFormat.SwapBehavior.DoubleBuffer
+        if definition.doubleBuffer
+        else QtGui.QSurfaceFormat.SwapBehavior.SingleBuffer
+    )
+    format.setDepthBufferSize(
+        definition.depthBuffer if definition.depthBuffer > -1 else 24
+    )
+    if definition.stencilBuffer > -1:
+        format.setStencilBufferSize(definition.stencilBuffer)
+    if definition.rgb:
+        format.setRedBufferSize(COLOUR_BITS)
+        format.setGreenBufferSize(COLOUR_BITS)
+        format.setBlueBufferSize(COLOUR_BITS)
+    # A window with an alpha channel is transparent to any compositor that
+    # honours destination alpha, so cleared pixels show what is behind the
+    # window.  Only ask for one when the definition does.
+    format.setAlphaBufferSize(COLOUR_BITS if definition.alpha else 0)
+
+    if definition.multisampleSamples > 0:
+        format.setSamples(definition.multisampleSamples)
+    elif definition.multisampleBuffer > 0:
+        format.setSamples(4)
+    if definition.stereo > 0:
+        format.setStereo(True)
+    if definition.debug:
+        format.setOption(QtGui.QSurfaceFormat.FormatOption.DebugContext)
+    format.setSwapInterval(1 if definition.vsync else 0)
+    if definition.accumulationBuffer > -1:
+        log.warning(
+            "Qt provides no accumulation buffer; ignoring the %d bits requested",
+            definition.accumulationBuffer,
+        )
+    return format
+
+
+class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
+    """Implementation of the Context API on a Qt window
+
+    ``Context`` is listed **before** ``QWindow``, unlike the mix-in order of
+    every other backend.  PySide's initialisers are cooperative: ``QWindow``'s
+    calls whatever ``__init__`` comes after it, and with ``Context`` there it
+    builds the whole engine -- callbacks, event managers, ``OnInit`` -- part
+    way through constructing the window it is supposed to be built on.  After
+    ``QWindow`` there is only Qt's own hierarchy, so the chain ends where it
+    should and each half is initialised in the order it needs.
+
+    Rendering is driven from a Qt timer rather than from paint events: the
+    engine's frame is an event cascade followed by a render, only the cascade
+    always runs (animations, timers and queued events live there) and only
+    sometimes is there anything new to draw.  A timer expresses that directly,
+    and lets input events accumulate between frames instead of forcing a render
+    each.
+    """
+
+    #: The QOpenGLContext this window renders through.
+    glContext = None
+    #: Set while ``OnInit`` is still waiting for the window to be given a
+    #: surface it can render into.
+    _initPending = False
+    _renderTimerId = None
+    _renderedFirst = False
+    _loopTrace = None
+    #: True when the pointer is hidden and grabbed for a mouse-look mode.
+    _pointerGrabbed = False
+    #: Set once the window system has refused this window the pointer, so it is
+    #: not asked again for an answer that will not change.
+    _pointerGrabRefused = False
+    #: Where the pointer was last warped to, in global coordinates, so the move
+    #: event the warp itself generates can be told from a real one.
+    _pointerWarpedTo = None
+    #: True when this context created the QGuiApplication, and so may end the
+    #: process when the user quits.
+    _ownsApplication = False
+    #: Set while the context is shutting down, so the close event its own close
+    #: raises does not start the shutdown again.
+    _quitting = False
 
     def __init__(self, definition=None, parent=None, **named):
-        # set up double buffering and rgb display mode
+        """Create the window, its GL context, and the engine on top of them
+
+        definition -- ContextDefinition (or a dictionary of its fields)
+            describing the window to create; see
+            :class:`OpenGLContext.contextdefinition.ContextDefinition`
+        parent -- optional parent QWindow
+        named -- individual definition fields, overriding the definition
+        """
+        QtGui.QWindow.__init__(self, parent)
         definition = self.setDefinition(definition)
-        super(QtContext, self).__init__(
-            self.formatFromDefinition(definition),
-            parent,
-        )
-        self.setAutoBufferSwap(False)
-        self.resize(*definition.size)
-        Context.__init__(self, definition)
+        for key, value in named.items():
+            setattr(definition, key, value)
 
-    @classmethod
-    def formatFromDefinition(cls, definition):
-        """Create a QGLFormat from definition parameters"""
-        format = QtOpenGL.QGLFormat.defaultFormat()
-        if hasattr(format, "setProfile"):
-            if definition.profile == "compatibility":
-                format.setProfile(QtOpenGL.QGLFormat.CompatibilityProfile)
-            elif definition.profile == "core":
-                if not definition.version[0]:
-                    definition.version = [3, 3]
-                format.setVersion(*definition.version)
-                format.setProfile(QtOpenGL.QGLFormat.CoreProfile)
-            else:
-                raise ValueError("Unrecognized profile: %r", definition.profile)
-        elif definition.profile != "compatibility":
+        self.setSurfaceType(QtGui.QSurface.SurfaceType.OpenGLSurface)
+        self.setFormat(surfaceFormatFromDefinition(definition))
+        self.setTitle(definition.title or self.getApplicationName())
+        self.resize(*[int(value) for value in definition.size])
+        self.create()
+
+        # Deliberately **not** parented to the window.  Qt destroys a QObject's
+        # children from ``~QObject``, which runs after ``~QWindow`` has already
+        # torn the platform surface down -- so a GL context parented here would
+        # be destroyed pointing at a window that no longer exists, and taking
+        # the process with it.  Owned by this attribute instead, and released
+        # while the window is still whole (see releaseGL).
+        #
+        # requestedFormat rather than format: once the window has been created
+        # the latter answers what the platform settled on, so a GL context built
+        # from it would ask for whatever was already conceded rather than for
+        # what the definition wants.
+        self.glContext = QtGui.QOpenGLContext()
+        self.glContext.setFormat(self.requestedFormat())
+        if not self.glContext.create():
             raise RuntimeError(
-                "Unable to set profile, Qt needs version 4.8+ to set profile"
+                "Qt could not create an OpenGL context for %s"
+                % (self.describeFormat(self.requestedFormat()),)
             )
-        format.setDoubleBuffer(bool(definition.doubleBuffer))
-        format.setStereo(definition.stereo)
-        for df, bset, vset in [
-            (definition.depthBuffer, format.setDepth, format.setDepthBufferSize),
-            (definition.stencilBuffer, format.setStencil, format.setStencilBufferSize),
-            (definition.multisampleBuffer, None, format.setSampleBuffers),
-            (definition.multisampleSamples, None, format.setSamples),
-            (definition.accumulationBuffer, format.setAccum, format.setAccumBufferSize),
-        ]:
-            if df > -1:
-                if bset:
-                    bset(bool(df))
-                if df and vset:
-                    vset(df)
-        return format
+        self.checkFormat(definition)
 
+        if hiddenRequested():
+            log.warning(
+                "%s is not supported by the Qt backend, which needs a mapped "
+                "window to render into; use the glfw backend for headless "
+                "capture. A window will open.", HIDDEN_ENV,
+            )
+        self.show()
+        self.waitForExposure()
+        Context.__init__(self, definition)
+        self._ready = True
+        if self.isExposed():
+            self.ViewPort(*self.framebufferSize())
+
+    ### window <-> definition
+    @staticmethod
+    def describeFormat(format):
+        """A one-line description of a surface format, for a log message"""
+        return "OpenGL %d.%d %s (%s)" % (
+            format.majorVersion(),
+            format.minorVersion(),
+            format.profile().name,
+            format.renderableType().name,
+        )
+
+    def checkFormat(self, definition):
+        """Complain if the context created is not the one that was asked for
+
+        A driver may answer a request with something older or with an entirely
+        different API, and every later failure then looks like a bug in the
+        renderer.  An OpenGL ES context is fatal -- PyOpenGL calls desktop
+        entry points that simply are not there -- while a version or profile
+        that merely differs is reported and left to the caller.
+        """
+        got = self.glContext.format()
+        if got.renderableType() != QtGui.QSurfaceFormat.RenderableType.OpenGL:
+            raise RuntimeError(
+                "Qt created an %s context; OpenGLContext needs desktop OpenGL. "
+                "The platform plugin may be restricted to OpenGL ES."
+                % (got.renderableType().name,)
+            )
+        wanted = self.requestedFormat()
+        if (got.majorVersion(), got.minorVersion()) < (
+            wanted.majorVersion(),
+            wanted.minorVersion(),
+        ):
+            raise RuntimeError(
+                "Asked for %s, got %s"
+                % (self.describeFormat(wanted), self.describeFormat(got))
+            )
+        if definition.profile == "core" and got.profile() != (
+            QtGui.QSurfaceFormat.OpenGLContextProfile.CoreProfile
+        ):
+            log.warning(
+                "Asked for a core profile, got %s; the driver may be reporting "
+                "the profile inaccurately, or may have ignored the request",
+                self.describeFormat(got),
+            )
+
+    def framebufferSize(self):
+        """The window's size in the physical pixels the viewport is measured in
+
+        Qt sizes a window in logical pixels, which on a scaled display are
+        fewer than the pixels actually rendered; a viewport set from the
+        logical size leaves the rest of the window undrawn.
+        """
+        ratio = self.devicePixelRatio()
+        size = self.size()
+        return int(size.width() * ratio), int(size.height() * ratio)
+
+    def waitForExposure(self, timeout=EXPOSURE_TIMEOUT):
+        """Give Qt the chance to map the window, so ``OnInit`` can run now
+
+        A window has no surface to render into until the compositor has shown
+        it, and how long that takes is not this process's to decide.  Waiting
+        here keeps the common case simple -- a script's ``OnInit`` runs inside
+        the constructor, as it does under every other backend -- and the wait
+        is bounded because a window that is never mapped must not become a
+        window that never returns.  :meth:`exposeEvent` finishes the job in
+        that case.
+
+        Input is **left in the queue** rather than dispatched: the engine that
+        would handle a keystroke does not exist yet -- ``Context.__init__`` has
+        not run -- and Qt hands a shown window whatever the user is doing,
+        starting with the release of the key that launched the program.  Held
+        back, those events arrive intact once the loop is running.
+
+        Returns whether the window is now exposed.
+        """
+        application = QtGui.QGuiApplication.instance()
+        if application is None:
+            return self.isExposed()
+        deadline = time.time() + timeout
+        while not self.isExposed() and time.time() < deadline:
+            application.processEvents(
+                QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents, 10
+            )
+        return self.isExposed()
+
+    ### Context API
     def setupCallbacks(self):
-        """Setup our Qt-level callbacks"""
+        """Ask the window manager for keyboard focus
+
+        A QWindow delivers key events only while it is the active window, and
+        a viewer whose keys do nothing until it is clicked reads as broken.
+        """
         super(QtContext, self).setupCallbacks()
-        self.setFocusPolicy(QtCore.Qt.StrongFocus)
-        # TODO: only set mouse tracking if we have handlers for it
-        self.setMouseTracking(True)
+        self.requestActivate()
 
-    def paintEvent(self, event):
-        self.triggerRedraw(1)
+    def DoInit(self):
+        """Run ``OnInit`` as soon as there is a surface to render into
 
-    def triggerRedraw(self, force=False):
-        """Override triggerRedraw to do an update call..."""
-        result = super(QtContext, self).triggerRedraw(force)
-        if force:
-            # TODO: this should *not* be working this way, as it
-            # causes 100% CPU usage, basically there's no idle processing
-            # so we have to trigger the next event cascade when we're
-            # done with this one...
-            self.update()
-        return result
+        Deferred rather than skipped when the window is not yet exposed:
+        ``OnInit`` is where an application builds its textures, its shaders and
+        its scenegraph, and all of that needs a current GL context.
+        """
+        self._initPending = True
+        self.completeInit()
 
-    def resizeEvent(self, event):
-        size = event.size()
+    def completeInit(self):
+        """Run the deferred ``OnInit`` if the window is ready for it"""
+        if not self._initPending or not self.isExposed():
+            return False
+        self._initPending = False
         self.setCurrent()
         try:
-            self.ViewPort(size.width(), size.height())
+            self.checkSurface()
         finally:
             self.unsetCurrent()
-        self.triggerRedraw(1)
+        Context.DoInit(self)
+        return True
+
+    def checkSurface(self):
+        """Report a window whose GL surface cannot be drawn into
+
+        A platform plugin can hand back a context that is current on no surface
+        at all: ``makeCurrent`` answers true, every GL call succeeds, and the
+        default framebuffer has no colour buffer to write to, so every frame is
+        black and nothing anywhere raises.  The Qt Wayland plugin does this
+        wherever the compositor will not give it a usable EGL window surface.
+        Naming it costs one query at start-up and turns an evening of hunting
+        into a line of output.
+
+        Returns whether the surface can be drawn into.
+        """
+        from OpenGL.GL import GL_DRAW_BUFFER, GL_NONE, glGetIntegerv
+
+        if int(glGetIntegerv(GL_DRAW_BUFFER)) != GL_NONE:
+            return True
+        application = QtGui.QGuiApplication.instance()
+        log.error(
+            "The %r platform plugin gave this window a GL context with no "
+            "drawable surface: every frame will be black. Another plugin may "
+            "work -- QT_QPA_PLATFORM=xcb, say -- or use the glfw backend.",
+            application.platformName() if application is not None else 'Qt',
+        )
+        return False
 
     def setCurrent(self):
-        """Acquire the GL "focus" """
+        """Make this window's GL context the current one"""
         Context.setCurrent(self)
-        self.makeCurrent()
+        if self.glContext is not None and not self.glContext.makeCurrent(self):
+            log.warning("Qt would not make the GL context current")
 
-    def SwapBuffers(
-        self,
-    ):
-        """Implementation: swap the buffers"""
-        self.swapBuffers()
+    def SwapBuffers(self):
+        """Present the rendered frame"""
+        if self.glContext is not None:
+            self.glContext.swapBuffers(self)
 
-    def ProcessEvent(self, event):
-        result = super(QtContext, self).ProcessEvent(event)
-        return result
+    def OnIdle(self, *arguments):
+        """Animation hook for the Qt loop
+
+        The default ``Context.OnIdle`` renders through ``drawPoll``, which
+        would double up with the render this backend's own loop performs.
+        Demos that animate override this to call ``triggerRedraw``.
+        """
+        return 0
+
+    def OnResize(self, width, height):
+        """Take the new window size, in framebuffer pixels"""
+        self.ViewPort(width, height)
+        self.triggerRedraw(1)
+
+    def OnQuit(self, event=None):
+        """Close the window, and end the process if this context started it
+
+        A context created by :meth:`ContextMainLoop` *is* the application, and
+        quitting it means quitting the process, as it does under every other
+        backend.  A context embedded in somebody else's Qt application is a
+        view inside it, and closing a view must not take the host program down
+        with it -- so there, this closes the window and returns.
+
+        Quitting twice is quitting once: closing the window raises a close
+        event, which arrives back here, and a context that is already letting
+        go of its GL objects must not start again half way through.
+
+        The pointer is handed back first.  A window that closes while it still
+        holds a hidden, grabbed pointer leaves the user with no cursor and the
+        input still going to a window that is on its way out.
+        """
+        if self._quitting:
+            return 0
+        self._quitting = True
+        self.setPointerCapture(False)
+        self.suppressRedraw()
+        self.stopRenderTimer()
+        self.releaseGL()
+        self.close()
+        if self._ownsApplication:
+            return Context.OnQuit(self, event)
+        return 0
+
+    def settingsChanged(self):
+        """Re-read what a changed definition can still affect
+
+        Almost everything a settings screen offers is read by the render pass
+        every frame and needs nothing done here.  The swap interval is the
+        exception: it is part of the surface format, which is settled when the
+        GL context is created and cannot be changed for a live one, so a change
+        to it is reported and takes effect next time the program runs.
+        """
+        if self.glContext is not None:
+            wanted = bool(self.contextDefinition.vsync)
+            if bool(self.glContext.format().swapInterval()) != wanted:
+                log.info(
+                    "vsync is part of the surface format under Qt; the change "
+                    "takes effect in a new window"
+                )
+        Context.settingsChanged(self)
+
+    def setPointerCapture(self, capture):
+        """Hide and grab the pointer for a mouse-look movement mode
+
+        The pointer is hidden, grabbed so it keeps reporting while it is over
+        another window, and warped back to the middle of the window after each
+        movement -- which is what makes the motion unbounded, since a pointer
+        that stops at the edge of the screen is a view that stops turning
+        there.
+
+        Both the grab and the warp are requests the window system may refuse.
+        Qt's Wayland plugin grabs only for popup windows, and a Wayland
+        compositor does not let a client place the pointer at all.  **The answer
+        says which happened**: false means the cursor is hidden but turning is
+        limited to the window, and a caller that offers mouse-look can say so
+        rather than leaving the player to discover it.
+        """
+        self._pointerGrabbed = bool(capture)
+        self._pointerWarpedTo = None
+        if capture:
+            self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.BlankCursor))
+            grabbed = self.grabPointer(True)
+            self.recentrePointer()
+            return grabbed
+        self.grabPointer(False)
+        self.unsetCursor()
+        return True
+
+    def grabPointer(self, grab):
+        """Ask the window system for every mouse event; answer whether it agreed
+
+        A platform that refuses is asked once and then believed -- for letting
+        go as well as for taking, since there is nothing to let go of.  Qt's
+        Wayland plugin refuses for any window that is not a popup and warns
+        every time it is asked either way, so a mode entered and left repeatedly
+        would fill the log with news of something that cannot change while this
+        window exists.
+        """
+        if self._pointerGrabRefused:
+            return False
+        granted = bool(self.setMouseGrabEnabled(grab))
+        if grab and not granted:
+            self._pointerGrabRefused = True
+            application = QtGui.QGuiApplication.instance()
+            log.info(
+                "the %r platform plugin will not give this window the pointer; "
+                "mouse-look will stop at the edge of the window",
+                application.platformName() if application is not None else 'Qt',
+            )
+        return granted
+
+    def recentrePointer(self):
+        """Put the pointer back in the middle of the window, if it is grabbed"""
+        if not self._pointerGrabbed:
+            return
+        centre = self.mapToGlobal(
+            QtCore.QPoint(self.width() // 2, self.height() // 2)
+        )
+        self._pointerWarpedTo = centre
+        # The screen-less overload, and deliberately so.  A global position is
+        # unambiguous wherever the screens share one coordinate space, which is
+        # every platform bar an X11 server configured with genuinely separate
+        # ones -- and naming the window's QScreen instead
+        # (``setPos(self.screen(), centre)``) leaves something behind that
+        # brings down the teardown of a *later* window: a session that opens
+        # and closes enough of them ends in a segmentation fault rather than an
+        # error anything can catch.
+        QtGui.QCursor.setPos(centre)
+
+    def pointerWarpEcho(self, event):
+        """Whether this movement is the one :meth:`recentrePointer` caused
+
+        The warp arrives back as an ordinary movement, and a movement the
+        program made itself is not motion the user asked for: left in, it
+        cancels out every real movement and mouse-look never turns.
+        """
+        if self._pointerWarpedTo is None:
+            return False
+        echo = event.globalPosition().toPoint() == self._pointerWarpedTo
+        if echo:
+            self._pointerWarpedTo = None
+        return echo
+
+    ### Qt event handlers
+    def exposeEvent(self, event):
+        """Finish initialisation and size the viewport once there is a surface"""
+        if not self._ready or not self.isExposed():
+            return
+        self.completeInit()
+        self.OnResize(*self.framebufferSize())
+
+    def resizeEvent(self, event):
+        """Follow the window's size with the viewport"""
+        if not self._ready or not self.isExposed():
+            return
+        self.OnResize(*self.framebufferSize())
+
+    def closeEvent(self, event):
+        """Treat closing the window as quitting"""
+        self.OnQuit()
+
+    ### the render loop
+    def startRenderTimer(self):
+        """Begin the timer that drives the render loop"""
+        if self._renderTimerId is None:
+            self._renderTimerId = self.startTimer(
+                max(1, int(self.drawPollTimeout * 1000))
+            )
+        return self._renderTimerId
+
+    def stopRenderTimer(self):
+        """Stop the render loop's timer"""
+        if self._renderTimerId is not None:
+            self.killTimer(self._renderTimerId)
+            self._renderTimerId = None
+
+    def timerEvent(self, event):
+        if event.timerId() == self._renderTimerId:
+            self.loopIteration()
+        else:
+            super(QtContext, self).timerEvent(event)
+
+    def loopIteration(self):
+        """One pass of the render loop, timed phase by phase
+
+        The phases exist because the frame counter can only see the render.  An
+        application whose simulation lives in ``OnIdle`` stutters without the
+        counter ever dipping, and the phase that names the culprit is the
+        difference between a rendering problem and a simulation one.  See
+        :mod:`OpenGLContext.looptrace`.  Qt's own event dispatch is what calls
+        this, so there is no polling phase to charge for.
+        """
+        if not self._ready or self._initPending or not self.isExposed():
+            return False
+        # A private trace when a subclass has cleared setupLoopTrace's: a
+        # diagnostic must never be the reason a loop will not run.
+        trace = self._loopTrace or self.loopTrace or LoopTrace()
+        with trace.iteration():
+            with trace.phase('idle'):
+                self.OnIdle()
+            with trace.phase('draw'):
+                # force=1 when a redraw is pending; force=0 still runs the event
+                # cascade, so animations advance, and renders only if they
+                # produced a visible change.
+                if self.redrawRequest.is_set() or not self._renderedFirst:
+                    self._renderedFirst = True
+                    self.OnDraw(force=1)
+                else:
+                    self.OnDraw(force=0)
+        return True
+
+    def releaseGL(self):
+        """Let go of this window's GL objects, and then of the GL context
+
+        The cached text renderers own GL objects here, so they have to be
+        dropped before the context goes away rather than left for a later
+        window that the driver hands the same identifiers.
+
+        The GL context itself goes at the end, **while the window it draws into
+        is still whole**.  A QOpenGLContext's destructor reaches for the surface
+        it was last current on, so one that outlives its window is a crash
+        rather than a leak -- and the moment a Python object is destroyed is the
+        collector's to choose unless somebody chooses it first.  Calling this
+        twice is harmless; the second call has nothing to do.
+        """
+        glContext = self.glContext
+        if glContext is None:
+            return
+        from OpenGLContext.scenegraph.text import shadertext
+
+        if glContext.makeCurrent(self):
+            try:
+                shadertext.drop_text_renderers()
+            finally:
+                glContext.doneCurrent()
+        # Both references, so the C++ object is destroyed here rather than
+        # whenever the last of them happens to fall out of scope.
+        self.glContext = None
+        del glContext
+
+    def MainLoop(self):
+        """Run Qt's event loop with this context rendering inside it"""
+        application = QtGui.QGuiApplication.instance()
+        if application is None:
+            raise RuntimeError(
+                "A QGuiApplication must exist before the Qt main loop can run; "
+                "use ContextMainLoop, or create the application yourself"
+            )
+        # We drive rendering ourselves, so suppress the synchronous in-callback
+        # renders triggerPick/triggerRedraw would otherwise do.  A burst of
+        # input events then coalesces into a single render per iteration
+        # instead of one full render per event.
+        self.deferRedraw = True
+        self._loopTrace = self.loopTrace or LoopTrace()
+        self.startRenderTimer()
+        try:
+            return application.exec()
+        finally:
+            self.stopRenderTimer()
+            # A loop left while it was still slow -- a closed window, a Ctrl-C
+            # -- holds an episode nobody has written.
+            if self.stallJournal is not None:
+                self.stallJournal.close()
+            self.releaseGL()
 
     @classmethod
     def ContextMainLoop(cls, *args, **named):
-        """Mainloop for the GLUT testing context"""
-        app = QtGui.QApplication(sys.argv)
-        widget = cls(*args, **named)
-        widget.show()
-        sys.exit(app.exec_())
+        """Create the context and run it as an application
+
+        Uses the QGuiApplication already running where there is one, so a host
+        program that has built its own is not given a second.
+        """
+        application = QtGui.QGuiApplication.instance()
+        owned = application is None
+        if owned:
+            application = QtGui.QGuiApplication(sys.argv)
+        instance = cls(*args, **named)
+        instance._ownsApplication = owned
+        if instance.contextDefinition.profileFile:
+            import cProfile
+
+            return cProfile.runctx(
+                "instance.MainLoop()",
+                globals(),
+                locals(),
+                instance.contextDefinition.profileFile,
+            )
+        return instance.MainLoop()
+
+    def container(self, parent=None):
+        """Wrap this window in a QWidget, for placing in a widget layout
+
+        The way a QWindow joins a widget interface: the returned widget can be
+        added to a layout, given a size policy and laid out beside the rest of
+        an application's controls.  Requires ``PySide6.QtWidgets``, and so a
+        ``QApplication`` rather than a bare ``QGuiApplication``.
+        """
+        from PySide6 import QtWidgets
+
+        return QtWidgets.QWidget.createWindowContainer(self, parent)
 
 
 class QtInteractiveContext(
@@ -131,14 +693,27 @@ class QtInteractiveContext(
     """Qt context providing camera, mouse and keyboard interaction"""
 
 
-class VRMLContext(vrmlcontext.VRMLContext, QtInteractiveContext):
-    """GLUT-specific VRML97-aware Testing Context"""
+class QtViewerContext(vrmlcontext.VRMLContext, QtInteractiveContext):
+    """Qt context that can open a scene file and show it
+
+    What it adds to :class:`QtInteractiveContext` is everything a viewer needs
+    and a program drawing its own geometry does not: ``load(url)``, which goes
+    through OpenGLContext's loader registry and so reads VRML97, OBJ and glTF
+    alike; the font providers text nodes need; and the viewpoint handling that
+    binds a scene's own cameras.
+
+    This is what the ``qt`` backend registers as its
+    :class:`OpenGLContext.plugins.VRMLContext`, so it is what
+    ``Context.getContextType('qt', plugins.VRMLContext)`` and every viewer built
+    on ``testingcontext.getVRML()`` gets.
+    """
 
 
 if __name__ == "__main__":
 
-    class TestContext(VRMLContext):
+    class TestContext(QtViewerContext):
         def OnInit(self):
-            self.load(sys.argv[1])
+            if sys.argv[1:]:
+                self.load(sys.argv[1])
 
     TestContext.ContextMainLoop()

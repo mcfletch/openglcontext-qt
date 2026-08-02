@@ -1,5 +1,10 @@
-PyQt-x11-gpl-4.6.1
-dist
-build
-MANIFEST
-.bzr
+*.egg-info/
+*.py[cod]
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+build/
+dist/

@@ -1,0 +1,91 @@
+[build-system]
+# setuptools >= 77 is required for the PEP 639 SPDX `license` expression below
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OpenGLContext-qt"
+dynamic = ["version"]
+description = "PySide6 (Qt 6) context for the OpenGLContext rendering engine"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["license.txt"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Mike C. Fletcher", email = "mcfletch@vrplumber.com" }
+]
+keywords = [
+    "PyOpenGL", "OpenGL", "Context", "OpenGLContext", "Qt", "PySide", "PySide6",
+    "render", "3D", "TrueType", "text", "VRML", "VRML97", "scenegraph"
+]
+classifiers = [
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Intended Audience :: Developers",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+]
+
+dependencies = [
+    "OpenGLContext>=2.3.0",
+    # PySide6-Essentials rather than the PySide6 metapackage: QtCore, QtGui and
+    # QtOpenGL are all this backend touches, and Addons is another ~200MB of
+    # modules (WebEngine, Charts, 3D) that nothing here imports. A user who
+    # installs plain PySide6 satisfies this requirement without a second
+    # download, since the metapackage depends on Essentials at the same version.
+    "PySide6-Essentials>=6.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
+
+[project.urls]
+Homepage = "http://pyopengl.sourceforge.net/context/"
+Repository = "https://github.com/mcfletch/openglcontext-qt"
+
+[tool.setuptools.dynamic]
+version = {attr = "OpenGLContext_qt.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["OpenGLContext_qt*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long (handled by the formatter)
+    "E741",  # ambiguous variable name
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+# Backstop so a wedged GL driver or a window that never gets exposed cannot hang
+# the whole session.
+timeout = 120
+markers = [
+    "gl: needs a real OpenGL context (a display Qt can open a window on)",
+]

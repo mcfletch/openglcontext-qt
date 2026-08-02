@@ -1,17 +1,22 @@
-"""PyQt4/PySide-based OpenGLContext Context implementation
+"""PySide6 (Qt 6) Context implementation for OpenGLContext
 
-Note that this code is BSD licenced, but that PyQt is GPL licenced.
-You can use the LGPL PySide library if this is a problem for you.
+Importing this package registers the ``qt`` backend with OpenGLContext's plugin
+system, which is all that is needed for ``OPENGLCONTEXT_BACKEND=qt`` -- or
+``Context.getContextType('qt')`` -- to find it.  OpenGLContext imports this
+package itself if it is installed, so an application usually imports nothing
+from here at all.
 
-Note: all of the Contexts defined here are defined in the same
-module, so there is no load-time benefit to using a QtContext
-instead of a VRMLContext, though the VRMLContext will do more
-setup/registration when used than the QtContext.
+Registration is deliberately the *only* thing this module does: the contexts
+themselves live in :mod:`OpenGLContext_qt.qtcontext` and are loaded when one is
+asked for, so a program using another backend does not pay for Qt.
 """
 
 from OpenGLContext.plugins import Context, InteractiveContext, VRMLContext
 
-__version__ = "1.0.0a3"
+__version__ = "2.0.0a1"
+__author__ = "Michael Colin Fletcher"
+__license__ = "BSD-Style, see license.txt for details"
+
 Context(
     "qt",
     "OpenGLContext_qt.qtcontext.QtContext",
@@ -22,5 +27,5 @@ InteractiveContext(
 )
 VRMLContext(
     "qt",
-    "OpenGLContext_qt.qtcontext.VRMLContext",
+    "OpenGLContext_qt.qtcontext.QtViewerContext",
 )
