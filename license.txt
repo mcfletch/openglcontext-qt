@@ -36,14 +36,14 @@ OpenGLContext-qt License
 	OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Note on Qt
+Note on Qt Licensing
 
-	This package is BSD licensed, and depends on PySide6, which is the
-	Qt Company's own set of Python bindings for Qt and is licensed under
-	the LGPL.  The dependency is a runtime one: nothing here is derived
-	from Qt or from PySide6, and no Qt or PySide6 source is copied into
-	it.  An application that links PySide6 takes on the LGPL's terms for
-	that library; this package adds none of its own.
+	This package is BSD licensed, and imports PySide6 (if installed),
+	which is the Qt Company's own set of Python bindings for Qt and is 
+	licensed under the LGPL.  The dependency is a runtime one: nothing here 
+	is derived from Qt or from PySide6, and no Qt or PySide6 source is 
+	copied into it.  An application that links PySide6 takes on the LGPL's 
+	terms for the application; this package adds none of its own.
 
 	Note that the original reason for keeping this module BSD was to allow
 	for combination with *either* PySide (LGPL) or PyQt (GPL) so that
