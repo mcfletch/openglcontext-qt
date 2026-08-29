@@ -89,3 +89,11 @@ timeout = 120
 markers = [
     "gl: needs a real OpenGL context (a display Qt can open a window on)",
 ]
+
+# uv decides whether its cached metadata for a source tree is still current
+# from pyproject.toml, setup.py and setup.cfg alone. This project's version
+# lives in OpenGLContext_qt/__init__.py, so name that file too: without it a
+# version bump leaves uv answering with the previous number, and a dependent
+# requiring the new one resolves against PyPI rather than this checkout.
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "OpenGLContext_qt/__init__.py" }]
