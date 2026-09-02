@@ -88,12 +88,16 @@ def surfaceFormatFromDefinition(definition):
     elif definition.profile == "compatibility":
         if major:
             format.setVersion(major, minor)
-            # Below GL 3.0 there are no profiles to choose between, and naming
-            # one makes the request stricter for no gain.
-            if major >= 3:
-                format.setProfile(
-                    QtGui.QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile
-                )
+        # Asked for, whatever version was named -- including none.  A driver
+        # free to choose picks the profile it likes: Mesa answers a request
+        # that names neither with a 4.6 *core* context, and the fixed-function
+        # calls a compatibility profile is asked for precisely so that they
+        # work then fail at the first glMatrixMode.  Below GL 3.2 there are no
+        # profiles to choose between and the attribute is ignored, which costs
+        # the request nothing.
+        format.setProfile(
+            QtGui.QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile
+        )
     else:
         raise ValueError("Unrecognised profile: %r" % (definition.profile,))
 
@@ -185,9 +189,13 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         named -- individual definition fields, overriding the definition
         """
         QtGui.QWindow.__init__(self, parent)
-        definition = self.setDefinition(definition)
-        for key, value in named.items():
-            setattr(definition, key, value)
+        # resolveDefinition rather than setDefinition plus a loop of setattr:
+        # the engine's own resolution is where a field that follows from
+        # another is worked out -- a profile named without a version settles
+        # the version from it -- and a backend that sets the fields itself gets
+        # the profile it was asked for beside a version left over from the
+        # default, which the driver reads as a request for a different profile.
+        definition = self.setDefinition(self.resolveDefinition(definition, **named))
 
         self.setSurfaceType(QtGui.QSurface.SurfaceType.OpenGLSurface)
         self.setFormat(surfaceFormatFromDefinition(definition))
@@ -264,12 +272,19 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
                 "Asked for %s, got %s"
                 % (self.describeFormat(wanted), self.describeFormat(got))
             )
-        if definition.profile == "core" and got.profile() != (
-            QtGui.QSurfaceFormat.OpenGLContextProfile.CoreProfile
-        ):
+        # Both directions: a compatibility request answered with a core context
+        # is the one that goes on to fail, since the fixed-function entry points
+        # it was asked for are the ones a core profile does not have.
+        profiles = QtGui.QSurfaceFormat.OpenGLContextProfile
+        expected = {
+            "core": profiles.CoreProfile,
+            "compatibility": profiles.CompatibilityProfile,
+        }.get(definition.profile)
+        if expected is not None and got.profile() != expected:
             log.warning(
-                "Asked for a core profile, got %s; the driver may be reporting "
+                "Asked for a %s profile, got %s; the driver may be reporting "
                 "the profile inaccurately, or may have ignored the request",
+                definition.profile,
                 self.describeFormat(got),
             )
 

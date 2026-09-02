@@ -52,11 +52,19 @@ def test_a_compatibility_profile_is_asked_for_as_one():
     assert (format.majorVersion(), format.minorVersion()) == (3, 2)
 
 
-def test_a_compatibility_context_with_no_version_names_no_profile():
-    """Below GL 3.0 there are no profiles, and naming one narrows the request
-    for nothing."""
+def test_a_compatibility_context_with_no_version_still_names_the_profile():
+    """Naming no version leaves the driver free to choose the profile too.
+
+    Below GL 3.2 there are no profiles to choose between and the attribute is
+    ignored, so naming one costs the request nothing -- while leaving it unsaid
+    gets a *core* context from a driver that defaults to its highest version,
+    and the fixed-function entry points a compatibility profile is asked for
+    are exactly the ones that are then missing.
+    """
     format = formatFor(profile='compatibility', version=(0, 0))
-    assert format.profile() == Format.OpenGLContextProfile.NoProfile
+    assert format.profile() == Format.OpenGLContextProfile.CompatibilityProfile
+    # Still no version: what it asks for is a profile, not a level.
+    assert (format.majorVersion(), format.minorVersion()) == (2, 0)
 
 
 def test_an_unknown_profile_is_refused():

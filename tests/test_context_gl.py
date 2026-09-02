@@ -295,6 +295,18 @@ def test_grabbing_the_pointer_hides_it(context_factory):
 def test_capturing_says_whether_the_pointer_was_really_taken(context_factory):
     """A platform that will not hand it over is not a platform that did."""
     context = context_factory()
+    # Asked of Qt first, and by probing rather than by reading the plugin's
+    # name: a platform that refuses the grab outright is one where "it really
+    # was taken" cannot be asserted of anything, and the refusal is what the
+    # case below covers instead.
+    if not context.setMouseGrabEnabled(True):
+        pytest.skip(
+            'the %r Qt platform plugin does not grab the pointer for ordinary '
+            'windows; test_a_refused_grab_is_reported_as_a_refusal covers what '
+            'this backend does about that'
+            % (QtGui.QGuiApplication.platformName(),)
+        )
+    context.setMouseGrabEnabled(False)
     assert context.setPointerCapture(True) is True
 
 
