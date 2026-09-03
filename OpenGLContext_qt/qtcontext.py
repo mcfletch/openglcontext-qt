@@ -612,9 +612,9 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
     def releaseGL(self):
         """Let go of this window's GL objects, and then of the GL context
 
-        The cached text renderers own GL objects here, so they have to be
-        dropped before the context goes away rather than left for a later
-        window that the driver hands the same identifiers.
+        The engine's caches own GL objects here, so they have to be dropped
+        before the context goes away rather than left for a later window that
+        the driver hands the same identifiers.
 
         The GL context itself goes at the end, **while the window it draws into
         is still whole**.  A QOpenGLContext's destructor reaches for the surface
@@ -626,11 +626,11 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         glContext = self.glContext
         if glContext is None:
             return
-        from OpenGLContext.scenegraph.text import shadertext
+        from OpenGLContext import contextresources
 
         if glContext.makeCurrent(self):
             try:
-                shadertext.drop_text_renderers()
+                contextresources.context_lost()
             finally:
                 glContext.doneCurrent()
         # Both references, so the C++ object is destroyed here rather than
