@@ -12,7 +12,8 @@ the conversion happens once, here.
 """
 
 from OpenGLContext.events import eventhandlermixin, keyboardevents, mouseevents
-from OpenGLContext.events.mouseevents import WHEEL_DOWN, WHEEL_UP
+from OpenGLContext.events.mouseevents import WHEEL_UP
+from OpenGLContext.events.wheel import WheelNotches
 from PySide6 import QtCore
 
 #: What Qt reports for one notch of a conventional mouse wheel: rotation is
@@ -43,9 +44,6 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
     :class:`OpenGLContext_qt.qtcontext.QtContext`.
     """
 
-    #: Accumulated wheel rotation that has not yet made a whole notch.
-    _wheelRemainder = 0.0
-
     #: Set by the window once the engine behind it exists; see
     #: :class:`OpenGLContext_qt.qtcontext.QtContext`.
     _ready = False
@@ -71,6 +69,9 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         """
         if not self.engineReady():
             return
+        if event.isAutoRepeat():
+            self.noteNativeRepeat()     # Qt supplies them; do not double up
+        self.noteKeyDown(int(event.key()), _modifiersOf(event))
         self.ProcessEvent(QtKeyboardEvent(self, event, 1))
         if event.text():
             self.ProcessEvent(QtKeypressEvent(self, event))
@@ -87,18 +88,39 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         """
         if not self.engineReady() or event.isAutoRepeat():
             return
+        self.noteKeyUp(int(event.key()))
         self.ProcessEvent(QtKeyboardEvent(self, event, 0))
+
+    def emitKey(self, key, state, modifiers):
+        """Send a key transition the window system did not report.
+
+        For focus loss, where Qt delivers no release at all.  ``modifiers`` is
+        the triple that came with the press, so the synthetic release matches
+        the binding the press did; see
+        :class:`OpenGLContext.events.eventhandlermixin.HeldKeyMixin`.
+        """
+        made = QtKeyboardEvent.__new__(QtKeyboardEvent)
+        keyboardevents.KeyboardEvent.__init__(made)
+        if hasattr(self, 'currentPass'):
+            made.renderingPass = self.currentPass
+        made.modifiers = modifiers
+        made.name = _nameForKey(key)
+        made.state = state
+        self.ProcessEvent(made)
 
     def focusOutEvent(self, event):
         """Forget what is held when the window loses focus.
 
         No key-up arrives for a key that was down when focus went elsewhere, so
         without this the key stays held for the rest of the session and the
-        camera keeps moving with nobody touching the keyboard.
+        camera keeps moving with nobody touching the keyboard.  The sampler is
+        cleared *and* the releases are sent, because an application that tracks
+        held keys from the events has no other way to learn of them.
         """
         state = getattr(self, 'getInputState', None)
         if self.engineReady() and state is not None:
             state().clear()
+        self.clearHeldKeys()
         super(EventHandlerMixin, self).focusOutEvent(event)
 
     ### MOUSE interactions
@@ -170,23 +192,15 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
     def _wheelNotches(self, rotation):
         """The whole notches in one report of ``rotation``, carrying the rest.
 
-        A conventional wheel reports :data:`WHEEL_DETENT` per notch and leaves
-        nothing over.  A high-resolution wheel or a touchpad reports a stream of
-        fractions, which are summed so that a slow drag scrolls once it has
-        asked for a whole notch and a fast one scrolls no further than it was
-        pushed.  Turning back drops what was carried, so jitter over a touchpad
-        cannot accumulate into a notch in the direction it is not moving.
+        The counting is :class:`OpenGLContext.events.wheel.WheelNotches`, which
+        every backend whose toolkit states a detent size shares; Qt's is
+        :data:`WHEEL_DETENT`.
         """
-        rotation = float(rotation)
-        if not rotation:
-            return []
-        carried = self._wheelRemainder
-        if (carried > 0.0) != (rotation > 0.0):
-            carried = 0.0
-        total = carried + rotation
-        notches = int(total / WHEEL_DETENT)
-        self._wheelRemainder = total - notches * WHEEL_DETENT
-        return [WHEEL_UP if total > 0.0 else WHEEL_DOWN] * abs(notches)
+        counter = self.__dict__.get('_wheelCounter')
+        if counter is None:
+            counter = self.__dict__['_wheelCounter'] = WheelNotches(
+                WHEEL_DETENT)
+        return counter.notches(rotation)
 
     def _framebufferPoint(self, event):
         """A Qt event's position in framebuffer pixels, y still counting down.
@@ -202,6 +216,37 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         return int(position.x() * ratio), int(position.y() * ratio)
 
 
+def _modifiersOf(qtEvent):
+    """The shift, control and alt triple a Qt event was delivered with
+
+    A function rather than a method on the event classes, because the window
+    reads it too: a key it has to *hold* is remembered with the modifiers its
+    press carried, so the release focus loss never delivered matches the
+    binding the press matched.
+    """
+    modifiers = qtEvent.modifiers()
+    return (
+        bool(modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier),
+        bool(modifiers & QtCore.Qt.KeyboardModifier.ControlModifier),
+        bool(modifiers & QtCore.Qt.KeyboardModifier.AltModifier),
+    )
+
+
+def _nameForKey(key, text=''):
+    """The OpenGLContext name of a Qt key code
+
+    Split out from the event so a key transition the engine has to *make* --
+    the release focus loss never delivered -- is named exactly as the press
+    was, and matches the binding the press matched.
+    """
+    name = KEYBOARD_MAPPING.get(key)
+    if name is not None:
+        return name
+    if 0x20 <= key <= 0x7E:
+        return chr(key).lower()
+    return text or '<unknown-%d>' % (key,)
+
+
 class QtXEvent(object):
     """Base class for the Qt-specific event classes
 
@@ -212,12 +257,7 @@ class QtXEvent(object):
 
     def _getModifiers(self, qtEvent):
         """The shift, control and alt triple for a Qt event"""
-        modifiers = qtEvent.modifiers()
-        return (
-            bool(modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier),
-            bool(modifiers & QtCore.Qt.KeyboardModifier.ControlModifier),
-            bool(modifiers & QtCore.Qt.KeyboardModifier.AltModifier),
-        )
+        return _modifiersOf(qtEvent)
 
     def _getButton(self, qtEvent):
         """The button this event is about, or None for one we do not model"""
@@ -239,13 +279,7 @@ class QtXEvent(object):
         a binding reads ``'w'`` whether or not shift is down -- the modifiers
         are reported separately and a binding that wants shift says so.
         """
-        key = int(qtEvent.key())
-        name = KEYBOARD_MAPPING.get(key)
-        if name is not None:
-            return name
-        if 0x20 <= key <= 0x7E:
-            return chr(key).lower()
-        return qtEvent.text() or '<unknown-%d>' % (key,)
+        return _nameForKey(int(qtEvent.key()), qtEvent.text())
 
 
 class QtMouseButtonEvent(QtXEvent, mouseevents.MouseButtonEvent):

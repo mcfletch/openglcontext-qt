@@ -445,19 +445,52 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         """Re-read what a changed definition can still affect
 
         Almost everything a settings screen offers is read by the render pass
-        every frame and needs nothing done here.  The swap interval is the
-        exception: it is part of the surface format, which is settled when the
-        GL context is created and cannot be changed for a live one, so a change
-        to it is reported and takes effect next time the program runs.
+        every frame and needs nothing done here; what is left is the two
+        window-level settings, the swap interval and whether the window fills
+        the screen.
         """
-        if self.glContext is not None:
-            wanted = bool(self.contextDefinition.vsync)
-            if bool(self.glContext.format().swapInterval()) != wanted:
-                log.info(
-                    "vsync is part of the surface format under Qt; the change "
-                    "takes effect in a new window"
-                )
+        from OpenGLContext import renderoptions
+
+        self.applyVSync()
+        self.setFullscreen(renderoptions.fullscreen_window(self))
         Context.settingsChanged(self)
+
+    def applyVSync(self, definition=None):
+        """Report that a live context's swap interval cannot be changed
+
+        It is part of the surface format, which is settled when the GL context
+        is created, so a change is said out loud and takes effect the next time
+        the program runs.  ``definition`` is what to read the wanted value from
+        where it is not this context's own.
+        """
+        if self.glContext is None:
+            return False
+        source = self.contextDefinition if definition is None else definition
+        wanted = bool(source.vsync)
+        if bool(self.glContext.format().swapInterval()) != wanted:
+            log.info(
+                "vsync is part of the surface format under Qt; the change "
+                "takes effect in a new window"
+            )
+        return False
+
+    def setFullscreen(self, fullscreen):
+        """Fill the screen, or go back to the window this context opened with
+
+        Qt moves a window between the two without re-making its GL context, so
+        nothing the engine has uploaded is lost, and a player can leave a
+        full-screen game without restarting it.
+        """
+        state = QtCore.Qt.WindowState.WindowFullScreen
+        already = bool(self.windowState() & state)
+        if bool(fullscreen) == already:
+            return True
+        if fullscreen:
+            self.showFullScreen()
+        else:
+            self.showNormal()
+        self.triggerRedraw(1)
+        return True
 
     def setPointerCapture(self, capture):
         """Hide and grab the pointer for a mouse-look movement mode
@@ -661,6 +694,10 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             # -- holds an episode nobody has written.
             if self.stallJournal is not None:
                 self.stallJournal.close()
+            # The same argument for the session recording: what it holds of the
+            # last few seconds is exactly what a session that ended badly is
+            # worth reading for.
+            self.stopTelemetry('mainloop-ended')
             self.releaseGL()
 
     @classmethod
