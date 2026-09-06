@@ -66,10 +66,16 @@ Three contexts are available, matching the rest of OpenGLContext:
 
 ### Inside a Qt application
 
-`ContextMainLoop` creates a `QGuiApplication` only if there is not one
+Creating a context creates a `QGuiApplication` only if there is not one
 already, so a context can be created inside a program that has built its own
-application object. To place the view in a widget layout, wrap it with
-`container()`:
+application object -- and equally in a program that has built nothing, which is
+what a test, a benchmark or a script stepping frames for itself is. Qt requires
+an application before any window exists and ends the process where there is
+none, so the context asks for one however it is built rather than only on the
+way into `ContextMainLoop`. Whichever call made the application owns it, and
+only its own windows may end it (see **Closing a view** below).
+
+To place the view in a widget layout, wrap it with `container()`:
 
 ```python
 from PySide6 import QtWidgets

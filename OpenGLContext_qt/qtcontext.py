@@ -38,6 +38,27 @@ from OpenGLContext_qt import qtevents
 
 log = logging.getLogger(__name__)
 
+
+def ensureApplication():
+    """The process's ``QGuiApplication``, made if there is not one yet
+
+    Answers ``(application, created)``, where ``created`` says whether this
+    call is the one that made it -- which is what decides whether quitting a
+    window may end the application with it.
+
+    **Qt ends the process when a window is made without one**, through
+    ``qFatal``: an abort rather than an exception, so nothing can catch it and
+    offer the caller something else.  The question is therefore asked on every
+    path that builds a window -- the constructor as much as
+    :meth:`QtContext.ContextMainLoop` -- rather than only on the way into the
+    main loop.  A host program that built its own application keeps it: Qt
+    allows exactly one.
+    """
+    application = QtGui.QGuiApplication.instance()
+    if application is not None:
+        return application, False
+    return QtGui.QGuiApplication(sys.argv), True
+
 #: Colour channel depth requested for an RGB(A) window.  Qt takes each channel
 #: separately where ``ContextDefinition`` has a single ``rgb`` flag.
 COLOUR_BITS = 8
@@ -188,6 +209,10 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         parent -- optional parent QWindow
         named -- individual definition fields, overriding the definition
         """
+        # Before anything else Qt: a window made without a QGuiApplication
+        # ends the process.  See ensureApplication.
+        _application, created = ensureApplication()
+        self._ownsApplication = created
         QtGui.QWindow.__init__(self, parent)
         # resolveDefinition rather than setDefinition plus a loop of setattr:
         # the engine's own resolution is where a field that follows from
@@ -388,10 +413,35 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         return False
 
     def setCurrent(self):
-        """Make this window's GL context the current one"""
+        """Make this window's GL context the current one
+
+        A context belonging to another window system is let go of first.  A
+        thread holds one GL context and the binding APIs do not know about each
+        other, so Qt asking for a thread an EGL or GLX context from elsewhere
+        in the process holds is refused -- and a refusal here is worse than it
+        looks, since the GL calls that follow then go to whichever context
+        *is* current and answer for that one.  See
+        ``Context.releaseForeignContext``; Qt re-takes the thread on every
+        ``makeCurrent``, so letting go costs it nothing.
+        """
         Context.setCurrent(self)
+        self.releaseForeignContext()
         if self.glContext is not None and not self.glContext.makeCurrent(self):
             log.warning("Qt would not make the GL context current")
+            return
+        self.bindContextResources(self._glHandle())
+
+    def _glHandle(self):
+        """The GL context handle the caches and PyOpenGL key on.
+
+        The platform's own handle rather than Qt's object: what identifies a
+        context to PyOpenGL is what the binding API calls it.  Read after the
+        window is current, which is the only moment the answer is about this
+        window.
+        """
+        from OpenGLContext import contextresources
+
+        return contextresources.context_key()
 
     def SwapBuffers(self):
         """Present the rendered frame"""
@@ -490,6 +540,14 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         else:
             self.showNormal()
         self.triggerRedraw(1)
+        return True
+
+    def pumpWindowEvents(self):
+        """Dispatch what Qt has queued; see Context.pumpWindowEvents"""
+        application = QtGui.QGuiApplication.instance()
+        if application is None:
+            return False
+        application.processEvents()
         return True
 
     def setPointerCapture(self, capture):
@@ -642,6 +700,13 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
                     self.OnDraw(force=0)
         return True
 
+    def releaseWindow(self):
+        """Let this window's GL objects and its GL context go
+
+        The name every backend answers to; this one is :meth:`releaseGL`.
+        """
+        self.releaseGL()
+
     def releaseGL(self):
         """Let go of this window's GL objects, and then of the GL context
 
@@ -704,15 +769,10 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
     def ContextMainLoop(cls, *args, **named):
         """Create the context and run it as an application
 
-        Uses the QGuiApplication already running where there is one, so a host
-        program that has built its own is not given a second.
+        The context's own construction makes the QGuiApplication where there
+        is not one already, and records whether it owns what it made.
         """
-        application = QtGui.QGuiApplication.instance()
-        owned = application is None
-        if owned:
-            application = QtGui.QGuiApplication(sys.argv)
         instance = cls(*args, **named)
-        instance._ownsApplication = owned
         if instance.contextDefinition.profileFile:
             import cProfile
 
