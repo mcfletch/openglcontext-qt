@@ -90,6 +90,17 @@ window.show()
 view.MainLoop()
 ```
 
+`OpenGLContext_qt/demos/qt_viewer.py` is the whole of that as a program to
+read: a menu bar, a tree of the scene, and the engine's own viewer beside it,
+with Qt owning the loop.
+
+```bash
+python -m OpenGLContext_qt.demos.qt_viewer model.glb
+```
+
+The same program in Tk and wx ships with the engine, in `OpenGLContext/demos/`,
+and `docs/embedding.html` there covers what each toolkit needs.
+
 Escape quits, as it does under every OpenGLContext backend — but only the
 process it started. A context created inside somebody else's `QApplication`
 closes its own window and leaves the host program running. Rebind the key if
