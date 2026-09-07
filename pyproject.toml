@@ -57,6 +57,13 @@ version = {attr = "OpenGLContext_qt.__version__"}
 where = ["."]
 include = ["OpenGLContext_qt*"]
 
+[tool.setuptools.package-data]
+# The demo's packaging recipe: a PyInstaller spec, a build script and the
+# distribution a .deb is built from. Read rather than imported, and shipped so
+# that somebody who installed this rather than cloning it has it. See
+# OpenGLContext_qt/demos/packaging/README.md.
+OpenGLContext_qt = ["demos/packaging/*", "demos/packaging/deb-project/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

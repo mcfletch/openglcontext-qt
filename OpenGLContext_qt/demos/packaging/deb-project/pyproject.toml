@@ -1,0 +1,40 @@
+# The demo as a distribution, which is what a native package is built from.
+#
+# A demo is not a command: `OpenGLContext_qt.demos` deliberately declares no
+# console scripts, since a command whose purpose is to be read is in the way of
+# the ones that do work.  A package, though, has to have something to put in
+# /usr/bin and something to name in a menu entry -- so shipping one means
+# turning it into an application, and this is the whole of what that takes.
+#
+# There is no code here: the module is the distribution's own, and this is
+# metadata and an entry point.  That is the shape to copy for an application
+# whose code *is* its own -- add the package, and the dependency below stays
+# exactly as it is.
+#
+#     oglc-deb --project . --runtime <a relocatable CPython> --backend qt
+#
+# See `../build-deb.sh`, and `docs/packaging.html` in the engine.
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openglcontext-qt-viewer-demo"
+version = "1.0.0"
+description = "A view inside a Qt application, as one widget beside the rest"
+requires-python = ">=3.10"
+license = "BSD-3-Clause"
+authors = [{ name = "Mike C. Fletcher", email = "mcfletch@vrplumber.com" }]
+# OpenGLContext-qt brings the engine and PySide6-Essentials with it, so this is
+# the whole of it.  Nothing of Qt is pruned from the interpreter -- it arrives
+# as a wheel in the environment -- but `--backend qt` is passed anyway, since a
+# package should say what it opens its window with.
+dependencies = ["OpenGLContext-qt"]
+
+[project.scripts]
+oglc-qt-viewer = "OpenGLContext_qt.demos.qt_viewer:main"
+
+[tool.setuptools]
+# No modules of its own: what this distribution installs is the script above.
+packages = []
