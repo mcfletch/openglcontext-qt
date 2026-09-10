@@ -11,6 +11,8 @@ counting upward from the bottom, and the two differ on any scaled display, so
 the conversion happens once, here.
 """
 
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+
 from OpenGLContext.events import eventhandlermixin, keyboardevents, mouseevents
 from OpenGLContext.events.mouseevents import WHEEL_UP
 from OpenGLContext.events.wheel import WheelNotches
@@ -48,7 +50,23 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
     #: :class:`OpenGLContext_qt.qtcontext.QtContext`.
     _ready = False
 
-    def engineReady(self):
+    if TYPE_CHECKING:
+        # What this mix-in needs of the classes beside it, declared for a
+        # checker and nothing else: `QtContext` mixes it with `Context` and
+        # `QWindow`, which is where each of these actually comes from, and a
+        # base of either name here would put a second copy in the MRO.
+        def addPickEvent(self, event: Any) -> None: ...
+        def triggerPick(self) -> None: ...
+        def getViewPort(self) -> Tuple[int, int]: ...
+        def recentrePointer(self) -> None: ...
+        #: Takes the event rather than a point, unlike the other backends'
+        #: method of this name: Qt answers a warp in *global* coordinates,
+        #: which is what `QtContext.recentrePointer` recorded.
+        def pointerWarpEcho(self, event: Any) -> bool: ...
+        #: QWindow's, in logical pixels per device pixel.
+        def devicePixelRatio(self) -> float: ...
+
+    def engineReady(self) -> bool:
         """Whether the engine behind this window can be told about input yet
 
         **A window is on screen before its context is finished.**  Qt hands a
@@ -61,7 +79,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         return self._ready
 
     ### KEYBOARD interactions
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: Any) -> None:
         """Convert a key-down to a context-style event.
 
         An auto-repeat is passed through as another key-down, which is what a
@@ -76,7 +94,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         if event.text():
             self.ProcessEvent(QtKeypressEvent(self, event))
 
-    def keyReleaseEvent(self, event):
+    def keyReleaseEvent(self, event: Any) -> None:
         """Convert a key-up to a context-style event.
 
         **An auto-repeat release is not a release.**  X11 delivers a key-up
@@ -91,7 +109,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         self.noteKeyUp(int(event.key()))
         self.ProcessEvent(QtKeyboardEvent(self, event, 0))
 
-    def emitKey(self, key, state, modifiers):
+    def emitKey(self, key: Any, state: int, modifiers: Any) -> None:
         """Send a key transition the window system did not report.
 
         For focus loss, where Qt delivers no release at all.  ``modifiers`` is
@@ -108,7 +126,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         made.state = state
         self.ProcessEvent(made)
 
-    def focusOutEvent(self, event):
+    def focusOutEvent(self, event: Any) -> None:
         """Forget what is held when the window loses focus.
 
         No key-up arrives for a key that was down when focus went elsewhere, so
@@ -121,10 +139,12 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         if self.engineReady() and state is not None:
             state().clear()
         self.clearHeldKeys()
-        super(EventHandlerMixin, self).focusOutEvent(event)
+        # QWindow's, supplied by the class this is mixed into: a checker
+        # reading this file alone sees only the engine's mix-in above.
+        super(EventHandlerMixin, self).focusOutEvent(event)  # type: ignore[misc]
 
     ### MOUSE interactions
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: Any) -> None:
         """Convert pointer motion to a context-style event.
 
         The movement sampler is told directly as well as through the pick
@@ -154,7 +174,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         self.addPickEvent(QtMouseMoveEvent(self, event, x, y))
         self.triggerPick()
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: Any) -> None:
         """Convert a mouse-button press to a context-style event"""
         if not self.engineReady():
             return
@@ -162,7 +182,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         self.addPickEvent(QtMouseButtonEvent(self, event, x, y, state=1))
         self.triggerPick()
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: Any) -> None:
         """Convert a mouse-button release to a context-style event"""
         if not self.engineReady():
             return
@@ -170,7 +190,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         self.addPickEvent(QtMouseButtonEvent(self, event, x, y, state=0))
         self.triggerPick()
 
-    def wheelEvent(self, event):
+    def wheelEvent(self, event: Any) -> None:
         """Convert scrolling to the pair of button events a wheel notch is.
 
         Qt reports scrolling as an angle rather than as the wheel buttons
@@ -189,7 +209,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
                 )
         self.triggerPick()
 
-    def _wheelNotches(self, rotation):
+    def _wheelNotches(self, rotation: float) -> Any:
         """The whole notches in one report of ``rotation``, carrying the rest.
 
         The counting is :class:`OpenGLContext.events.wheel.WheelNotches`, which
@@ -202,7 +222,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
                 WHEEL_DETENT)
         return counter.notches(rotation)
 
-    def _framebufferPoint(self, event):
+    def _framebufferPoint(self, event: Any) -> Tuple[float, float]:
         """A Qt event's position in framebuffer pixels, y still counting down.
 
         Qt reports positions in logical window pixels, while the viewport and
@@ -216,7 +236,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         return int(position.x() * ratio), int(position.y() * ratio)
 
 
-def _modifiersOf(qtEvent):
+def _modifiersOf(qtEvent: Any) -> Tuple[int, int, int]:
     """The shift, control and alt triple a Qt event was delivered with
 
     A function rather than a method on the event classes, because the window
@@ -232,7 +252,7 @@ def _modifiersOf(qtEvent):
     )
 
 
-def _nameForKey(key, text=''):
+def _nameForKey(key: Any, text: str = '') -> str:
     """The OpenGLContext name of a Qt key code
 
     Split out from the event so a key transition the engine has to *make* --
@@ -241,7 +261,7 @@ def _nameForKey(key, text=''):
     """
     name = KEYBOARD_MAPPING.get(key)
     if name is not None:
-        return name
+        return str(name)
     if 0x20 <= key <= 0x7E:
         return chr(key).lower()
     return text or '<unknown-%d>' % (key,)
@@ -255,11 +275,11 @@ class QtXEvent(object):
     names.
     """
 
-    def _getModifiers(self, qtEvent):
+    def _getModifiers(self, qtEvent: Any) -> Tuple[int, int, int]:
         """The shift, control and alt triple for a Qt event"""
         return _modifiersOf(qtEvent)
 
-    def _getButton(self, qtEvent):
+    def _getButton(self, qtEvent: Any) -> Optional[int]:
         """The button this event is about, or None for one we do not model"""
         button = qtEvent.button()
         for local, marker in BUTTON_MAPPING:
@@ -267,12 +287,12 @@ class QtXEvent(object):
                 return local
         return None
 
-    def _getButtons(self, qtEvent):
+    def _getButtons(self, qtEvent: Any) -> Tuple[int, ...]:
         """Every button currently held, as OpenGLContext numbers them"""
         held = qtEvent.buttons()
         return tuple(local for local, marker in BUTTON_MAPPING if held & marker)
 
-    def _getName(self, qtEvent):
+    def _getName(self, qtEvent: Any) -> str:
         """The OpenGLContext name of the key a Qt key event is about.
 
         Printable keys are named by their unshifted character in lower case, so
@@ -285,12 +305,15 @@ class QtXEvent(object):
 class QtMouseButtonEvent(QtXEvent, mouseevents.MouseButtonEvent):
     """Qt-specific mouse-button event"""
 
-    def __init__(self, context, qtEvent, x, y, state=0):
+    def __init__(self, context: Any, qtEvent: Any, x: float, y: float,
+                 state: int = 0) -> None:
         super(QtMouseButtonEvent, self).__init__()
         if hasattr(context, "currentPass"):
             self.renderingPass = context.currentPass
         self.modifiers = self._getModifiers(qtEvent)
-        self.button = self._getButton(qtEvent)
+        button = self._getButton(qtEvent)
+        if button is not None:
+            self.button = button
         self.state = state
         self.pickPoint = x, context.getViewPort()[1] - y
 
@@ -303,7 +326,8 @@ class QtWheelEvent(QtXEvent, mouseevents.MouseButtonEvent):
     has already worked out.
     """
 
-    def __init__(self, context, qtEvent, x, y, button=WHEEL_UP, state=0):
+    def __init__(self, context: Any, qtEvent: Any, x: float, y: float,
+                 button: int = WHEEL_UP, state: int = 0) -> None:
         super(QtWheelEvent, self).__init__()
         if hasattr(context, "currentPass"):
             self.renderingPass = context.currentPass
@@ -316,7 +340,8 @@ class QtWheelEvent(QtXEvent, mouseevents.MouseButtonEvent):
 class QtMouseMoveEvent(QtXEvent, mouseevents.MouseMoveEvent):
     """Qt-specific mouse-movement event"""
 
-    def __init__(self, context, qtEvent, x, y):
+    def __init__(self, context: Any, qtEvent: Any, x: float,
+                 y: float) -> None:
         super(QtMouseMoveEvent, self).__init__()
         if hasattr(context, "currentPass"):
             self.renderingPass = context.currentPass
@@ -328,7 +353,7 @@ class QtMouseMoveEvent(QtXEvent, mouseevents.MouseMoveEvent):
 class QtKeyboardEvent(QtXEvent, keyboardevents.KeyboardEvent):
     """Qt-specific key-transition event"""
 
-    def __init__(self, context, qtEvent, state=0):
+    def __init__(self, context: Any, qtEvent: Any, state: int = 0) -> None:
         super(QtKeyboardEvent, self).__init__()
         if hasattr(context, "currentPass"):
             self.renderingPass = context.currentPass
@@ -344,7 +369,7 @@ class QtKeypressEvent(QtXEvent, keyboardevents.KeypressEvent):
     keyboard layout are already applied: this is what a text field types.
     """
 
-    def __init__(self, context, qtEvent):
+    def __init__(self, context: Any, qtEvent: Any) -> None:
         super(QtKeypressEvent, self).__init__()
         if hasattr(context, "currentPass"):
             self.renderingPass = context.currentPass
@@ -352,7 +377,7 @@ class QtKeypressEvent(QtXEvent, keyboardevents.KeypressEvent):
         self.name = qtEvent.text()
 
 
-def _keyboardMapping():
+def _keyboardMapping() -> Dict[Any, str]:
     """The named (non-printable) keys, keyed by Qt's integer key code"""
     Key = QtCore.Qt.Key
     mapping = {

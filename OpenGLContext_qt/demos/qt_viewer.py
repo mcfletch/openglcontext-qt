@@ -36,8 +36,10 @@ depth and expandability such a model is written from.
 The same program is written for Tk and wx in :mod:`OpenGLContext.demos`.
 """
 import sys
+from collections.abc import Sequence
+from typing import Any, Callable, Optional
 
-from OpenGLContext.outline import SceneOutline, nodeSummary
+from OpenGLContext.outline import OutlinePath, SceneOutline, nodeSummary
 from OpenGLContext.viewer import viewerFor
 from PySide6 import QtCore, QtWidgets
 from pydispatch import dispatcher
@@ -53,13 +55,13 @@ class SceneView(viewerFor('qt')):  # type: ignore[misc]  # base chosen at run ti
     """The engine's viewer, as one widget in somebody else's window"""
 
     #: Called on the GUI thread once a scene has been built, if a host set it.
-    onScene = None
+    onScene: Optional[Callable[[], Any]] = None
     #: Called when the view has finished: quit from inside, or its window
     #: closed.  A view in somebody else's window never ends their process, so
     #: what that should mean is the host's to decide.
-    onFinish = None
+    onFinish: Optional[Callable[[], Any]] = None
 
-    def hasSceneToShow(self):
+    def hasSceneToShow(self) -> bool:
         """The host opens scenes, so the engine's launch screen stays down
 
         Starting with nothing to show is a viewer with its shelf open, which is
@@ -69,7 +71,7 @@ class SceneView(viewerFor('qt')):  # type: ignore[misc]  # base chosen at run ti
         """
         return True
 
-    def onSceneReady(self):
+    def onSceneReady(self) -> None:
         """A scene has been built and swapped in -- on the render thread
 
         Which is Qt's own thread here, since Qt's timer is what drives the
@@ -79,7 +81,7 @@ class SceneView(viewerFor('qt')):  # type: ignore[misc]  # base chosen at run ti
         if self.onScene is not None:
             self.onScene()
 
-    def OnQuit(self, event=None):
+    def OnQuit(self, event: Any = None) -> Any:
         """The view is done with -- tell the host, which owns the window"""
         result = super().OnQuit(event)
         if self.onFinish is not None:
@@ -98,7 +100,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     #: The same, for a field of the one node the panel is showing.
     nodeChanged = QtCore.Signal()
 
-    def __init__(self, source=None):
+    def __init__(self, source: Optional[str] = None) -> None:
         super().__init__()
         self.setWindowTitle('OpenGLContext in Qt')
         self.resize(960, 600)
@@ -135,7 +137,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.open(source)
 
     # -- building the window ----------------------------------------------
-    def buildMenu(self):
+    def buildMenu(self) -> None:
         """The application's own menu bar, over the engine's two entry points"""
         fileMenu = self.menuBar().addMenu('&File')
         fileMenu.addAction('Open file…', 'Ctrl+O', self.onOpenFile)
@@ -143,7 +145,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fileMenu.addSeparator()
         fileMenu.addAction('Quit', 'Ctrl+Q', self.close)
 
-    def buildPanel(self, parent):
+    def buildPanel(self, parent: Any) -> Any:
         """The tree of the scene, and what the selected node holds"""
         panel = QtWidgets.QWidget(parent)
         layout = QtWidgets.QVBoxLayout(panel)
@@ -164,19 +166,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return panel
 
     # -- the menu ---------------------------------------------------------
-    def onOpenFile(self):
+    def onOpenFile(self) -> None:
         chosen, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, 'Open a scene', '', SCENE_FILES)
         if chosen:
             self.open(chosen)
 
-    def onOpenURL(self):
+    def onOpenURL(self) -> None:
         typed, accepted = QtWidgets.QInputDialog.getText(
             self, 'Open URL', 'Address of a scene:')
         if accepted and typed:
             self.open(typed)
 
-    def open(self, source):
+    def open(self, source: str) -> None:
         """Show *source*, which may be a path or a URL
 
         The load runs on a worker thread, so this returns at once and the
@@ -185,7 +187,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status.setText('Loading %s' % (source,))
         self.view.openSource(source)
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: Any) -> None:
         """Let go of the scene and the GL context as the window goes
 
         The host owns the loop, so closing this window is not ending the
@@ -199,14 +201,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     # -- the scene --------------------------------------------------------
-    def onSceneReady(self):
+    def onSceneReady(self) -> None:
         """A scene the worker thread loaded has been built and swapped in"""
         self.outline.root = self.view.sg
         self.status.setText(str(self.view.source or ''))
         self.fillTree()
 
     # -- the tree ---------------------------------------------------------
-    def fillTree(self):
+    def fillTree(self) -> None:
         """Put the outline's rows in the tree, as it stands now
 
         Qt's own expand and collapse signals are silenced while this runs: the
@@ -217,7 +219,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.tree.blockSignals(True)
         try:
             self.tree.clear()
-            items = {(): self.tree.invisibleRootItem()}
+            items: dict[OutlinePath, QtWidgets.QTreeWidgetItem] = {
+                (): self.tree.invisibleRootItem()}
             for row in self.outline.rows:
                 item = QtWidgets.QTreeWidgetItem(
                     items[row.path[:-1]] if row.path else self.tree,
@@ -236,27 +239,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
         finally:
             self.tree.blockSignals(False)
 
-    def onOpenRow(self, item):
+    def onOpenRow(self, item: Any) -> None:
         """The arrow beside a row was clicked: open it in the model too"""
         path = item.data(0, PATH_ROLE)
         if path is not None:
             self.outline.expand(path)
             self.fillTree()
 
-    def onCloseRow(self, item):
+    def onCloseRow(self, item: Any) -> None:
         path = item.data(0, PATH_ROLE)
         if path is not None:
             self.outline.collapse(path)
             self.fillTree()
 
-    def onSelect(self):
+    def onSelect(self) -> None:
         chosen = self.tree.selectedItems()
         self.outline.select(chosen[0].data(0, PATH_ROLE) if chosen else None)
         self.watch(self.outline.selected)
         self.showDetail()
 
     # -- watching the selected node ---------------------------------------
-    def watch(self, node):
+    def watch(self, node: Any) -> None:
         """Follow *node*'s fields, and stop following whatever came before
 
         Every field of every node announces a change through pydispatcher, so
@@ -270,10 +273,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if node is not None:
             dispatcher.connect(self.onNodeChanged, sender=node)
 
-    def onNodeChanged(self, signal=None, sender=None, **named):
+    def onNodeChanged(self, signal: Any = None, sender: Any = None,
+                      **named: Any) -> None:
         self.nodeChanged.emit()
 
-    def showDetail(self):
+    def showDetail(self) -> None:
         """Redraw the panel: what the selected node is, and what it holds"""
         row = self.outline.selectedRow
         if row is None:
@@ -285,7 +289,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.detail.setPlainText('\n'.join(lines))
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     # Before the view: it would make a QGuiApplication of its own otherwise,
     # Qt allows exactly one, and `container` needs the widgets one.

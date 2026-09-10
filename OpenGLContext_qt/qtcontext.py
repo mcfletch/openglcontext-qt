@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 import time
+from typing import Any, Tuple
 
 from OpenGLContext import interactivecontext, vrmlcontext
 from OpenGLContext.context import Context
@@ -39,7 +40,20 @@ from OpenGLContext_qt import qtevents
 log = logging.getLogger(__name__)
 
 
-def ensureApplication():
+def _platformName() -> str:
+    """What Qt calls the platform plugin in use, or 'Qt' where nothing can say.
+
+    ``QGuiApplication.instance()`` is declared to answer the *core* application,
+    which knows nothing about platforms, so the kind is asked rather than
+    assumed.
+    """
+    application = QtGui.QGuiApplication.instance()
+    return (application.platformName()
+            if isinstance(application, QtGui.QGuiApplication) else 'Qt')
+
+
+
+def ensureApplication() -> Any:
     """The process's ``QGuiApplication``, made if there is not one yet
 
     Answers ``(application, created)``, where ``created`` says whether this
@@ -79,13 +93,13 @@ EXPOSURE_TIMEOUT = 2.0
 HIDDEN_ENV = 'OPENGLCONTEXT_HIDDEN'
 
 
-def hiddenRequested():
+def hiddenRequested() -> bool:
     """Whether the environment asked for a window nobody can see"""
     return os.environ.get(HIDDEN_ENV, '').strip().lower() in (
         '1', 'true', 'yes', 'on')
 
 
-def surfaceFormatFromDefinition(definition):
+def surfaceFormatFromDefinition(definition: Any) -> Any:
     """Build the :class:`~PySide6.QtGui.QSurfaceFormat` a ContextDefinition asks for
 
     Every field of the definition that describes the *window* rather than the
@@ -200,7 +214,8 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
     #: raises does not start the shutdown again.
     _quitting = False
 
-    def __init__(self, definition=None, parent=None, **named):
+    def __init__(self, definition: Any = None, parent: Any = None,
+                 **named: Any) -> None:
         """Create the window, its GL context, and the engine on top of them
 
         definition -- ContextDefinition (or a dictionary of its fields)
@@ -263,7 +278,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
 
     ### window <-> definition
     @staticmethod
-    def describeFormat(format):
+    def describeFormat(format: Any) -> str:
         """A one-line description of a surface format, for a log message"""
         return "OpenGL %d.%d %s (%s)" % (
             format.majorVersion(),
@@ -272,7 +287,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             format.renderableType().name,
         )
 
-    def checkFormat(self, definition):
+    def checkFormat(self, definition: Any) -> None:
         """Complain if the context created is not the one that was asked for
 
         A driver may answer a request with something older or with an entirely
@@ -281,6 +296,10 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         entry points that simply are not there -- while a version or profile
         that merely differs is reported and left to the caller.
         """
+        if self.glContext is None:
+            raise RuntimeError(
+                "the window has no GL context to describe; it was destroyed, "
+                "or never made")
         got = self.glContext.format()
         if got.renderableType() != QtGui.QSurfaceFormat.RenderableType.OpenGL:
             raise RuntimeError(
@@ -313,7 +332,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
                 self.describeFormat(got),
             )
 
-    def framebufferSize(self):
+    def framebufferSize(self) -> Tuple[int, int]:
         """The window's size in the physical pixels the viewport is measured in
 
         Qt sizes a window in logical pixels, which on a scaled display are
@@ -324,7 +343,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         size = self.size()
         return int(size.width() * ratio), int(size.height() * ratio)
 
-    def waitForExposure(self, timeout=EXPOSURE_TIMEOUT):
+    def waitForExposure(self, timeout: float = EXPOSURE_TIMEOUT) -> bool:
         """Give Qt the chance to map the window, so ``OnInit`` can run now
 
         A window has no surface to render into until the compositor has shown
@@ -354,7 +373,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         return self.isExposed()
 
     ### Context API
-    def setupCallbacks(self):
+    def setupCallbacks(self) -> None:
         """Ask the window manager for keyboard focus
 
         A QWindow delivers key events only while it is the active window, and
@@ -363,7 +382,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         super(QtContext, self).setupCallbacks()
         self.requestActivate()
 
-    def DoInit(self):
+    def DoInit(self) -> None:
         """Run ``OnInit`` as soon as there is a surface to render into
 
         Deferred rather than skipped when the window is not yet exposed:
@@ -373,7 +392,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         self._initPending = True
         self.completeInit()
 
-    def completeInit(self):
+    def completeInit(self) -> bool:
         """Run the deferred ``OnInit`` if the window is ready for it"""
         if not self._initPending or not self.isExposed():
             return False
@@ -386,7 +405,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         Context.DoInit(self)
         return True
 
-    def checkSurface(self):
+    def checkSurface(self) -> bool:
         """Report a window whose GL surface cannot be drawn into
 
         A platform plugin can hand back a context that is current on no surface
@@ -403,16 +422,15 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
 
         if int(glGetIntegerv(GL_DRAW_BUFFER)) != GL_NONE:
             return True
-        application = QtGui.QGuiApplication.instance()
         log.error(
             "The %r platform plugin gave this window a GL context with no "
             "drawable surface: every frame will be black. Another plugin may "
             "work -- QT_QPA_PLATFORM=xcb, say -- or use the glfw backend.",
-            application.platformName() if application is not None else 'Qt',
+            _platformName(),
         )
         return False
 
-    def setCurrent(self):
+    def setCurrent(self, blocking: int = 1) -> None:
         """Make this window's GL context the current one
 
         A context belonging to another window system is let go of first.  A
@@ -431,7 +449,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             return
         self.bindContextResources(self._glHandle())
 
-    def _glHandle(self):
+    def _glHandle(self) -> Any:
         """The GL context handle the caches and PyOpenGL key on.
 
         The platform's own handle rather than Qt's object: what identifies a
@@ -443,12 +461,12 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
 
         return contextresources.context_key()
 
-    def SwapBuffers(self):
+    def SwapBuffers(self) -> None:
         """Present the rendered frame"""
         if self.glContext is not None:
             self.glContext.swapBuffers(self)
 
-    def OnIdle(self, *arguments):
+    def OnIdle(self, *arguments: Any) -> int:
         """Animation hook for the Qt loop
 
         The default ``Context.OnIdle`` renders through ``drawPoll``, which
@@ -457,12 +475,12 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         """
         return 0
 
-    def OnResize(self, width, height):
+    def OnResize(self, width: int, height: int) -> None:
         """Take the new window size, in framebuffer pixels"""
         self.ViewPort(width, height)
         self.triggerRedraw(1)
 
-    def OnQuit(self, event=None):
+    def OnQuit(self, event: Any = None) -> Any:
         """Close the window, and end the process if this context started it
 
         A context created by :meth:`ContextMainLoop` *is* the application, and
@@ -491,7 +509,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             return Context.OnQuit(self, event)
         return 0
 
-    def settingsChanged(self):
+    def settingsChanged(self) -> None:
         """Re-read what a changed definition can still affect
 
         Almost everything a settings screen offers is read by the render pass
@@ -505,7 +523,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         self.setFullscreen(renderoptions.fullscreen_window(self))
         Context.settingsChanged(self)
 
-    def applyVSync(self, definition=None):
+    def applyVSync(self, definition: Any = None) -> bool:
         """Report that a live context's swap interval cannot be changed
 
         It is part of the surface format, which is settled when the GL context
@@ -516,6 +534,8 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         if self.glContext is None:
             return False
         source = self.contextDefinition if definition is None else definition
+        if source is None:
+            return False        # no definition to read the preference from yet
         wanted = bool(source.vsync)
         if bool(self.glContext.format().swapInterval()) != wanted:
             log.info(
@@ -524,7 +544,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             )
         return False
 
-    def setFullscreen(self, fullscreen):
+    def setFullscreen(self, fullscreen: bool) -> bool:
         """Fill the screen, or go back to the window this context opened with
 
         Qt moves a window between the two without re-making its GL context, so
@@ -542,7 +562,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         self.triggerRedraw(1)
         return True
 
-    def pumpWindowEvents(self):
+    def pumpWindowEvents(self) -> bool:
         """Dispatch what Qt has queued; see Context.pumpWindowEvents"""
         application = QtGui.QGuiApplication.instance()
         if application is None:
@@ -550,7 +570,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         application.processEvents()
         return True
 
-    def setPointerCapture(self, capture):
+    def setPointerCapture(self, capture: bool) -> bool:
         """Hide and grab the pointer for a mouse-look movement mode
 
         The pointer is hidden, grabbed so it keeps reporting while it is over
@@ -577,7 +597,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         self.unsetCursor()
         return True
 
-    def grabPointer(self, grab):
+    def grabPointer(self, grab: bool) -> bool:
         """Ask the window system for every mouse event; answer whether it agreed
 
         A platform that refuses is asked once and then believed -- for letting
@@ -592,15 +612,14 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         granted = bool(self.setMouseGrabEnabled(grab))
         if grab and not granted:
             self._pointerGrabRefused = True
-            application = QtGui.QGuiApplication.instance()
             log.info(
                 "the %r platform plugin will not give this window the pointer; "
                 "mouse-look will stop at the edge of the window",
-                application.platformName() if application is not None else 'Qt',
+                _platformName(),
             )
         return granted
 
-    def recentrePointer(self):
+    def recentrePointer(self) -> None:
         """Put the pointer back in the middle of the window, if it is grabbed"""
         if not self._pointerGrabbed:
             return
@@ -618,7 +637,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         # error anything can catch.
         QtGui.QCursor.setPos(centre)
 
-    def pointerWarpEcho(self, event):
+    def pointerWarpEcho(self, event: Any) -> bool:
         """Whether this movement is the one :meth:`recentrePointer` caused
 
         The warp arrives back as an ordinary movement, and a movement the
@@ -627,31 +646,31 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         """
         if self._pointerWarpedTo is None:
             return False
-        echo = event.globalPosition().toPoint() == self._pointerWarpedTo
+        echo = bool(event.globalPosition().toPoint() == self._pointerWarpedTo)
         if echo:
             self._pointerWarpedTo = None
         return echo
 
     ### Qt event handlers
-    def exposeEvent(self, event):
+    def exposeEvent(self, event: Any) -> None:
         """Finish initialisation and size the viewport once there is a surface"""
         if not self._ready or not self.isExposed():
             return
         self.completeInit()
         self.OnResize(*self.framebufferSize())
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: Any) -> None:
         """Follow the window's size with the viewport"""
         if not self._ready or not self.isExposed():
             return
         self.OnResize(*self.framebufferSize())
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: Any) -> None:
         """Treat closing the window as quitting"""
         self.OnQuit()
 
     ### the render loop
-    def startRenderTimer(self):
+    def startRenderTimer(self) -> int:
         """Begin the timer that drives the render loop"""
         if self._renderTimerId is None:
             self._renderTimerId = self.startTimer(
@@ -659,19 +678,19 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             )
         return self._renderTimerId
 
-    def stopRenderTimer(self):
+    def stopRenderTimer(self) -> None:
         """Stop the render loop's timer"""
         if self._renderTimerId is not None:
             self.killTimer(self._renderTimerId)
             self._renderTimerId = None
 
-    def timerEvent(self, event):
+    def timerEvent(self, event: Any) -> None:
         if event.timerId() == self._renderTimerId:
             self.loopIteration()
         else:
             super(QtContext, self).timerEvent(event)
 
-    def loopIteration(self):
+    def loopIteration(self) -> bool:
         """One pass of the render loop, timed phase by phase
 
         The phases exist because the frame counter can only see the render.  An
@@ -700,14 +719,14 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
                     self.OnDraw(force=0)
         return True
 
-    def releaseWindow(self):
+    def releaseWindow(self) -> None:
         """Let this window's GL objects and its GL context go
 
         The name every backend answers to; this one is :meth:`releaseGL`.
         """
         self.releaseGL()
 
-    def releaseGL(self):
+    def releaseGL(self) -> None:
         """Let go of this window's GL objects, and then of the GL context
 
         The engine's caches own GL objects here, so they have to be dropped
@@ -736,7 +755,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         self.glContext = None
         del glContext
 
-    def MainLoop(self):
+    def MainLoop(self) -> Any:
         """Run Qt's event loop with this context rendering inside it"""
         application = QtGui.QGuiApplication.instance()
         if application is None:
@@ -766,25 +785,26 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             self.releaseGL()
 
     @classmethod
-    def ContextMainLoop(cls, *args, **named):
+    def ContextMainLoop(cls, *args: Any, **named: Any) -> Any:
         """Create the context and run it as an application
 
         The context's own construction makes the QGuiApplication where there
         is not one already, and records whether it owns what it made.
         """
         instance = cls(*args, **named)
-        if instance.contextDefinition.profileFile:
+        definition = instance.contextDefinition
+        if definition is not None and definition.profileFile:
             import cProfile
 
             return cProfile.runctx(
                 "instance.MainLoop()",
                 globals(),
                 locals(),
-                instance.contextDefinition.profileFile,
+                definition.profileFile,
             )
         return instance.MainLoop()
 
-    def container(self, parent=None):
+    def container(self, parent: Any = None) -> Any:
         """Wrap this window in a QWidget, for placing in a widget layout
 
         The way a QWindow joins a widget interface: the returned widget can be
@@ -824,7 +844,7 @@ class QtViewerContext(vrmlcontext.VRMLContext, QtInteractiveContext):
 if __name__ == "__main__":
 
     class TestContext(QtViewerContext):
-        def OnInit(self):
+        def OnInit(self) -> None:
             if sys.argv[1:]:
                 self.load(sys.argv[1])
 
