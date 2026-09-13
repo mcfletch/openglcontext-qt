@@ -34,12 +34,12 @@ classifiers = [
 ]
 
 dependencies = [
-    # 3.0.0a3 rather than 2.3.0: this backend is built on `viewerFor`, the
-    # context lifecycle contract and the window capabilities that arrived in
-    # 3.0.0a3, and the demo under `demos/` uses all three. The `a3` matters --
-    # a specifier naming no pre-release excludes pre-releases, and every
+    # 3.0.0a4 rather than 2.3.0: this backend is built on `viewerFor`, the
+    # context lifecycle contract and the window capabilities, none of which is
+    # in 3.0.0a2, and the demo under `demos/` uses all three. The pre-release
+    # matters -- a specifier naming none excludes pre-releases, and every
     # OpenGLContext release so far is one.
-    "OpenGLContext>=3.0.0a3",
+    "OpenGLContext>=3.0.0a4",
     # PySide6-Essentials rather than the PySide6 metapackage: QtCore, QtGui and
     # QtOpenGL are all this backend touches, and Addons is another ~200MB of
     # modules (WebEngine, Charts, 3D) that nothing here imports. A user who
