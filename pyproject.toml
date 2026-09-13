@@ -39,7 +39,7 @@ dependencies = [
     # in 3.0.0a2, and the demo under `demos/` uses all three. The pre-release
     # matters -- a specifier naming none excludes pre-releases, and every
     # OpenGLContext release so far is one.
-    "OpenGLContext>=3.0.0a4",
+    "OpenGLContext>=3.0.0a5",
     # PySide6-Essentials rather than the PySide6 metapackage: QtCore, QtGui and
     # QtOpenGL are all this backend touches, and Addons is another ~200MB of
     # modules (WebEngine, Charts, 3D) that nothing here imports. A user who
