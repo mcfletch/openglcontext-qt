@@ -570,6 +570,38 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         application.processEvents()
         return True
 
+    #: Qt's own cursor shapes, by the name a control asks for. Qt carries a
+    #: picture for each rather than reading a desktop theme, so every one of
+    #: these is there wherever Qt runs.
+    CURSOR_SHAPES = {
+        'arrow': 'ArrowCursor',
+        'hand': 'PointingHandCursor',
+        'text': 'IBeamCursor',
+        'crosshair': 'CrossCursor',
+        'resize-x': 'SizeHorCursor',
+        'resize-y': 'SizeVerCursor',
+        'resize': 'SizeAllCursor',
+        'no': 'ForbiddenCursor',
+    }
+
+    def setPointerShape(self, name: str) -> bool:
+        """Show this pointer; False for a shape Qt has not got.
+
+        Named apart from Qt's own ``setCursor``, which takes a ``QCursor``:
+        this is the engine's question, asked of every backend in the same
+        words.
+        """
+        if self._pointerGrabbed:
+            return False
+        shape = self.CURSOR_SHAPES.get(str(name or 'arrow'))
+        if shape is None:
+            return False
+        constant = getattr(QtCore.Qt.CursorShape, shape, None)
+        if constant is None:
+            return False
+        self.setCursor(QtGui.QCursor(constant))
+        return True
+
     def setPointerCapture(self, capture: bool) -> bool:
         """Hide and grab the pointer for a mouse-look movement mode
 
