@@ -94,6 +94,8 @@ select = [
     "UP006", "UP007", "UP035",  # builtin generics, X | Y, collections.abc imports
     "RUF100",  # every noqa silences something
     "PLC0415",  # imports at module top, unless a lazy one says why
+    "SLF001",  # no reaching into another object's private names
+    "ARG",  # every parameter is used, or its signature is fixed by a protocol
     "TID251",  # the raw forms the engine has an API for (banned-api, below)
 ]
 ignore = [

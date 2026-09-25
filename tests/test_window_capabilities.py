@@ -12,6 +12,8 @@ context is created, and a caller that is told can say so.
 See `plans/BACKEND-PARITY.md` in the OpenGLContext distribution.
 """
 
+import time
+
 import pytest
 from PySide6 import QtCore, QtGui
 
@@ -63,7 +65,7 @@ class TestFullScreen:
         context.setFullscreen(False)
         assert context.glContext is before
 
-    def test_a_settings_change_is_applied(self, context_factory, monkeypatch):
+    def test_a_settings_change_is_applied(self, context_factory):
         context = context_factory()
         context.contextDefinition.fullscreen = True
         context.settingsChanged()
@@ -93,19 +95,19 @@ class TestVSync:
 class TestHeldKeys:
     """No key-up arrives for a key that was down when focus went elsewhere."""
 
-    def _press(self, context, key=QtCore.Qt.Key.Key_W, repeat=False):
+    def _press(self, key=QtCore.Qt.Key.Key_W, repeat=False):
         return QtGui.QKeyEvent(QtCore.QEvent.Type.KeyPress, key,
                                QtCore.Qt.KeyboardModifier.NoModifier, 'w',
                                repeat)
 
     def test_a_key_that_goes_down_is_held(self, context_factory):
         context = context_factory()
-        context.keyPressEvent(self._press(context))
+        context.keyPressEvent(self._press())
         assert int(QtCore.Qt.Key.Key_W) in context.heldKeys()
 
     def test_a_key_that_comes_up_is_not(self, context_factory):
         context = context_factory()
-        context.keyPressEvent(self._press(context))
+        context.keyPressEvent(self._press())
         context.keyReleaseEvent(QtGui.QKeyEvent(
             QtCore.QEvent.Type.KeyRelease, QtCore.Qt.Key.Key_W,
             QtCore.Qt.KeyboardModifier.NoModifier, 'w'))
@@ -118,7 +120,7 @@ class TestHeldKeys:
         # one with no other reference to it dies before it is ever called.
         context.addEventHandler('keyboard', name='w', state=0,
                                 modifiers=(0, 0, 0), function=watcher.saw)
-        context.keyPressEvent(self._press(context))
+        context.keyPressEvent(self._press())
         context.focusOutEvent(QtGui.QFocusEvent(
             QtCore.QEvent.Type.FocusOut))
         assert context.heldKeys() == {}
@@ -126,10 +128,17 @@ class TestHeldKeys:
 
     def test_qts_own_repeat_stops_the_synthetic_one(self, context_factory):
         context = context_factory()
-        context.keyPressEvent(self._press(context))
-        assert context._nativeRepeat is False
-        context.keyPressEvent(self._press(context, repeat=True))
-        assert context._nativeRepeat is True
+        watcher = _Watcher()
+        context.addEventHandler('keyboard', name='w', state=1,
+                                modifiers=(0, 0, 0), function=watcher.saw)
+        context.keyPressEvent(self._press())
+        later = time.time() + 60
+        context.pumpKeyRepeats(now=later)
+        assert len(watcher.events) == 2, 'the press, then one synthetic repeat'
+        context.keyPressEvent(self._press(repeat=True))
+        del watcher.events[:]
+        context.pumpKeyRepeats(now=later + 60)
+        assert watcher.events == []
 
 
 class _Watcher:
@@ -149,8 +158,8 @@ class TestTheLoopClosesItsJournals:
         context = context_factory()
         stopped = []
         monkeypatch.setattr(type(context), 'stopTelemetry',
-                            lambda self, reason: stopped.append(reason))
+                            lambda _self, reason: stopped.append(reason))
         application = QtGui.QGuiApplication.instance()
-        monkeypatch.setattr(type(application), 'exec', lambda self: 0)
+        monkeypatch.setattr(type(application), 'exec', lambda _self: 0)
         context.MainLoop()
         assert stopped == ['mainloop-ended']

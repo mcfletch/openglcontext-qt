@@ -26,7 +26,7 @@ class Widget(object):
     is the one it does not consume.
     """
 
-    def focusOutEvent(self, event):
+    def focusOutEvent(self, event):  # noqa: ARG002 QWindow.focusOutEvent's signature
         self.chained = True
 
 
@@ -60,7 +60,7 @@ class Window(qtevents.EventHandlerMixin, Widget):
     def getViewPort(self):
         return (800, self.height)
 
-    def pointerWarpEcho(self, event):
+    def pointerWarpEcho(self, event):  # noqa: ARG002 QtContext.pointerWarpEcho's signature
         return self.warpEcho
 
     def recentrePointer(self):

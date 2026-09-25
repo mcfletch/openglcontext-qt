@@ -273,8 +273,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if node is not None:
             dispatcher.connect(self.onNodeChanged, sender=node)
 
-    def onNodeChanged(self, signal: Any = None, sender: Any = None,
-                      **named: Any) -> None:
+    def onNodeChanged(self) -> None:
         self.nodeChanged.emit()
 
     def showDetail(self) -> None:

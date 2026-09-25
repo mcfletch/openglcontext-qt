@@ -197,16 +197,17 @@ def test_the_render_loop_draws(context_factory):
 def test_the_loop_does_not_draw_before_the_window_is_ready(context_factory):
     """Qt delivers timer events to a window that is still being built."""
     context = context_factory(Scene, size=(160, 120))
-    context._ready = False
+    context._ready = False  # noqa: SLF001 a window still inside __init__, which no public call leaves
     assert not context.loopIteration()
 
 
 def test_the_timer_that_drives_the_loop_can_be_started_and_stopped(context_factory):
     context = context_factory(size=(160, 120))
-    assert context.startRenderTimer()
-    assert context.startRenderTimer() == context._renderTimerId   # not a second one
+    timer = context.startRenderTimer()
+    assert timer
+    assert context.startRenderTimer() == timer   # not a second one
     context.stopRenderTimer()
-    assert context._renderTimerId is None
+    assert context._renderTimerId is None  # noqa: SLF001 whether a timer runs has no public reader
 
 
 # -- input, as Qt actually delivers it ----------------------------------------
@@ -317,7 +318,7 @@ def test_a_refused_grab_is_reported_as_a_refusal(context_factory):
     that did not happen leaves mouse-look silently stopping at the window edge
     with nothing able to say why."""
     context = context_factory()
-    context.setMouseGrabEnabled = lambda grab: False
+    context.setMouseGrabEnabled = lambda _grab: False
     assert context.setPointerCapture(True) is False
     # Hidden all the same: turning still works inside the window.
     assert context.cursor().shape() == QtCore.Qt.CursorShape.BlankCursor
@@ -348,16 +349,14 @@ def test_the_warp_the_window_made_is_recognised(context_factory):
     that provoked it and the view never turns."""
     context = context_factory()
     context.setPointerCapture(True)
-    warped = context._pointerWarpedTo
-    assert warped is not None
-    assert context.pointerWarpEcho(_Motion(warped))
+    assert context.pointerWarpEcho(_Motion(_centre(context)))
 
 
 def test_only_the_one_warp_is_discarded(context_factory):
     """A second movement to the same place is the user putting it there."""
     context = context_factory()
     context.setPointerCapture(True)
-    warped = context._pointerWarpedTo
+    warped = _centre(context)
     context.pointerWarpEcho(_Motion(warped))
     assert not context.pointerWarpEcho(_Motion(warped))
 
@@ -365,7 +364,7 @@ def test_only_the_one_warp_is_discarded(context_factory):
 def test_a_movement_somewhere_else_is_the_users(context_factory):
     context = context_factory()
     context.setPointerCapture(True)
-    warped = context._pointerWarpedTo
+    warped = _centre(context)
     assert not context.pointerWarpEcho(
         _Motion(QtCore.QPoint(warped.x() + 17, warped.y())))
 
@@ -373,6 +372,12 @@ def test_a_movement_somewhere_else_is_the_users(context_factory):
 def test_nothing_is_discarded_when_the_pointer_is_free(context_factory):
     context = context_factory()
     assert not context.pointerWarpEcho(_Motion(QtCore.QPoint(1, 1)))
+
+
+def _centre(context):
+    """The middle of the window, in the global coordinates a warp is made in"""
+    return context.mapToGlobal(
+        QtCore.QPoint(context.width() // 2, context.height() // 2))
 
 
 class _Motion(object):
@@ -405,13 +410,13 @@ def test_quitting_twice_is_quitting_once(context_factory):
     context = context_factory(size=(160, 120))
     context.OnQuit()
     assert context.OnQuit() == 0
-    assert context._quitting
+    assert context.glContext is None
 
 
 def test_closing_the_window_quits_the_context(context_factory):
     context = context_factory(size=(160, 120))
     context.close()
-    assert context._quitting
+    assert context.glContext is None
 
 
 def test_the_gl_context_goes_before_the_window_it_draws_into(context_factory):
@@ -431,7 +436,8 @@ def test_the_gl_context_goes_before_the_window_it_draws_into(context_factory):
     assert context.glContext is None
 
 
-def test_opening_and_closing_many_views_does_not_kill_the_process(gl):
+@pytest.mark.usefixtures('gl')
+def test_opening_and_closing_many_views_does_not_kill_the_process():
     """A long-running application opens and closes views all session.
 
     Each one here does what a viewer does -- renders, takes the pointer for

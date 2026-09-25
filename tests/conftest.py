@@ -31,7 +31,7 @@ def application():
 
 
 @pytest.fixture(scope='session')
-def drawable(application):
+def drawable(application):  # noqa: ARG001 a window needs the QGuiApplication made first
     """Whether a window on this platform plugin can be rendered into
 
     Answered by making one and asking OpenGL, rather than by guessing from the
@@ -60,7 +60,7 @@ def gl(drawable, application):
 
 
 @pytest.fixture
-def context_factory(gl):
+def context_factory(gl):  # noqa: ARG001 requested for its skip where nothing can render
     """Make contexts, each with a window and GL context of its own
 
     A fresh window per test rather than a shared one: GL state left behind by
