@@ -166,6 +166,14 @@ def test_anything_else_is_not_a_request_for_one(value, monkeypatch):
     assert not qtcontext.hiddenRequested()
 
 
+def test_a_value_that_is_neither_yes_nor_no_is_reported(monkeypatch, caplog):
+    """The engine's reading of the switch, so a typo in a CI pin is seen."""
+    monkeypatch.setenv(qtcontext.HIDDEN_ENV, 'yse')
+    with caplog.at_level(logging.WARNING):
+        assert not qtcontext.hiddenRequested()
+    assert qtcontext.HIDDEN_ENV in caplog.text
+
+
 def test_an_unset_variable_asks_for_nothing(monkeypatch):
     monkeypatch.delenv(qtcontext.HIDDEN_ENV, raising=False)
     assert not qtcontext.hiddenRequested()

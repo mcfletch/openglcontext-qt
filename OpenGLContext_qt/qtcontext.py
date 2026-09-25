@@ -25,7 +25,6 @@ this engine calls.
 
 import cProfile
 import logging
-import os
 import sys
 import time
 from typing import Any, ClassVar
@@ -96,9 +95,12 @@ HIDDEN_ENV = 'OPENGLCONTEXT_HIDDEN'
 
 
 def hiddenRequested() -> bool:
-    """Whether the environment asked for a window nobody can see"""
-    return os.environ.get(HIDDEN_ENV, '').strip().lower() in (
-        '1', 'true', 'yes', 'on')
+    """Whether the environment asked for a window nobody can see
+
+    The engine's reading of the switch (:func:`OpenGLContext.renderoptions.hidden_window`),
+    which reports a value that is neither a yes nor a no.
+    """
+    return renderoptions.hidden_window()
 
 
 def surfaceFormatFromDefinition(definition: Any) -> Any:
@@ -430,7 +432,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         )
         return False
 
-    def setCurrent(self, blocking: int = 1) -> None:
+    def setCurrent(self, blocking: int = 1) -> None:  # noqa: ARG002 Context.setCurrent's signature
         """Make this window's GL context the current one
 
         A context belonging to another window system is let go of first.  A
@@ -464,7 +466,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         if self.glContext is not None:
             self.glContext.swapBuffers(self)
 
-    def OnIdle(self, *arguments: Any) -> int:
+    def OnIdle(self, *arguments: Any) -> int:  # noqa: ARG002 Context.OnIdle's signature
         """Animation hook for the Qt loop
 
         The default ``Context.OnIdle`` renders through ``drawPoll``, which
@@ -680,20 +682,20 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         return echo
 
     ### Qt event handlers
-    def exposeEvent(self, event: Any) -> None:
+    def exposeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
         """Finish initialisation and size the viewport once there is a surface"""
         if not self._ready or not self.isExposed():
             return
         self.completeInit()
         self.OnResize(*self.framebufferSize())
 
-    def resizeEvent(self, event: Any) -> None:
+    def resizeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
         """Follow the window's size with the viewport"""
         if not self._ready or not self.isExposed():
             return
         self.OnResize(*self.framebufferSize())
 
-    def closeEvent(self, event: Any) -> None:
+    def closeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
         """Treat closing the window as quitting"""
         self.OnQuit()
 

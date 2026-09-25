@@ -73,7 +73,7 @@ OpenGLContext_qt = ["demos/packaging/*", "demos/packaging/deb-project/*"]
 # The OGC rules (openglcontext-checks) this project is clean of, held by
 # the workspace preflight. The others join as the project reaches zero of
 # each; the counts are in openglcontext/plans/DEFECT-PREVENTION.md.
-select = ["OGC131", "OGC141", "OGC221", "OGC222", "OGC223"]
+select = ["OGC121", "OGC131", "OGC141", "OGC221", "OGC222", "OGC223"]
 
 [tool.ruff]
 line-length = 100
@@ -94,11 +94,33 @@ select = [
     "UP006", "UP007", "UP035",  # builtin generics, X | Y, collections.abc imports
     "RUF100",  # every noqa silences something
     "PLC0415",  # imports at module top, unless a lazy one says why
+    "TID251",  # the raw forms the engine has an API for (banned-api, below)
 ]
 ignore = [
     "E501",  # line too long (handled by the formatter)
     "E741",  # ambiguous variable name
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# The workspace's banned-api list (openglcontext/plans/DEFECT-PREVENTION.md):
+# the raw form, and the engine API that replaces it. The modules that
+# implement a replacement, and the programs and tests that set the process
+# environment, are exempted in per-file-ignores.
+"urllib.request.urlopen".msg = "fetch through OpenGLContext.loaders.resolver: Resolver.fetch, fetch_url, or AllowedHosts.open_url for a service's own hosts"
+"urllib.request.urlretrieve".msg = "fetch through OpenGLContext.loaders.resolver: fetch_to_cache, or AllowedHosts.open_url for a service's own hosts"
+"tarfile.TarFile.extractall".msg = "unpack through OpenGLContext.contentpacks.archive.extract, which refuses a member that leaves the directory and caps the size"
+"zipfile.ZipFile.extractall".msg = "unpack through OpenGLContext.contentpacks.archive.extract, which refuses a member that leaves the directory and caps the size"
+"shutil.rmtree".msg = "replace or remove a directory through OpenGLContext.atomicfiles: staged_directory, replace_directory or remove_directory"
+"shutil.move".msg = "move a finished file or directory into place through OpenGLContext.atomicfiles: staged_file, staged_directory or replace_directory"
+"os.rename".msg = "os.rename refuses an existing target on Windows; use os.replace, or OpenGLContext.atomicfiles"
+"os.environ".msg = "read a switch once, through OpenGLContext.renderoptions.env_flag_once / env_number_once, or in the program's start-up"
+"os.getenv".msg = "read a switch once, through OpenGLContext.renderoptions.env_flag_once / env_number_once, or in the program's start-up"
+"os._exit".msg = "exit through OpenGLContext.testing.process_exit.flush_and_exit, which flushes what was written first"
+
+[tool.ruff.lint.per-file-ignores]
+# A test, and the driver a test runs as a process, set that process's
+# environment.
+"tests/**" = ["TID251"]
 
 [tool.mypy]
 python_version = "3.12"
