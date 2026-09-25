@@ -14,6 +14,7 @@ import sys
 
 import numpy as np
 import pytest
+from OpenGL import _dispatch, contextdata
 from OpenGLContext import plugins
 from OpenGLContext.capture import read_back_buffer
 from OpenGLContext.context import Context
@@ -108,6 +109,15 @@ def test_a_core_context_gets_a_core_profile(context_factory):
     format = context.glContext.format()
     assert format.profile() == Format.OpenGLContextProfile.CoreProfile
     assert (format.majorVersion(), format.minorVersion()) >= qtcontext.CORE_VERSION
+
+
+def test_pyopengl_is_told_the_context_by_its_platform_handle(context_factory, monkeypatch):
+    """What PyOpenGL's dispatch keys on is the handle, not the engine's key."""
+    context = context_factory(profile='core')
+    told = []
+    monkeypatch.setattr(_dispatch, 'make_current', told.append)
+    context.setCurrent()
+    assert told == [contextdata.getContext()]
 
 
 def test_the_engine_is_told_it_is_a_core_profile_context(context_factory):

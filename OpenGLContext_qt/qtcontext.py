@@ -27,7 +27,8 @@ import cProfile
 import logging
 import sys
 import time
-from typing import Any, ClassVar
+from collections.abc import Hashable
+from typing import Any, ClassVar, Optional
 
 from OpenGL.GL import GL_DRAW_BUFFER, GL_NONE, glGetIntegerv
 from OpenGLContext import contextresources, interactivecontext, renderoptions, vrmlcontext
@@ -451,7 +452,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
             return
         self.bindContextResources(self._glHandle())
 
-    def _glHandle(self) -> Any:
+    def _glHandle(self) -> Optional[Hashable]:
         """The GL context handle the caches and PyOpenGL key on.
 
         The platform's own handle rather than Qt's object: what identifies a
@@ -459,7 +460,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         window is current, which is the only moment the answer is about this
         window.
         """
-        return contextresources.context_key()
+        return contextresources.current_handle()
 
     def SwapBuffers(self) -> None:
         """Present the rendered frame"""
