@@ -1,9 +1,7 @@
 """The pointer's shape, asked of the Qt backend.
 
-Named apart from Qt's own ``setCursor``, which takes a ``QCursor``: the
-engine asks every backend the same question in the same words, and a widget
-class that already has that name is exactly why the engine's is
-``setPointerShape``.
+The engine asks every backend for a shape by one of its ``CURSORS`` names
+through ``setPointerShape``; Qt's own ``setCursor`` takes a ``QCursor``.
 """
 import pytest
 

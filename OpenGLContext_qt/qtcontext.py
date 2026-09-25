@@ -27,7 +27,7 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Tuple
+from typing import Any, ClassVar, Dict, Tuple
 
 from OpenGLContext import interactivecontext, vrmlcontext
 from OpenGLContext.context import Context
@@ -573,7 +573,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
     #: Qt's own cursor shapes, by the name a control asks for. Qt carries a
     #: picture for each rather than reading a desktop theme, so every one of
     #: these is there wherever Qt runs.
-    CURSOR_SHAPES = {
+    CURSOR_SHAPES: ClassVar[Dict[str, str]] = {
         'arrow': 'ArrowCursor',
         'hand': 'PointingHandCursor',
         'text': 'IBeamCursor',
