@@ -7,12 +7,14 @@ driver will not give, a window with no drawable surface, a viewport that
 ignores display scaling) are all invisible without one.
 
 They are skipped, with a reason that says what to do about it, when the Qt
-platform plugin in use cannot give a window a drawable GL surface.
+platform plugin in use cannot give a window a drawable GL surface, or when Qt
+cannot start a GUI application here at all.
 """
 
 import pytest
 from PySide6 import QtGui
 
+from OpenGLContext_qt.available import gui_unavailable
 from OpenGLContext_qt.qtcontext import QtInteractiveContext
 
 
@@ -26,6 +28,11 @@ def application():
     """
     instance = QtGui.QGuiApplication.instance()
     if instance is None:
+        # Qt ends the process when it cannot start, so it is asked first in a
+        # child; the tests that need an application then skip with its reason.
+        reason = gui_unavailable()
+        if reason is not None:
+            pytest.skip(reason)
         instance = QtGui.QGuiApplication([])
     return instance
 

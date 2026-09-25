@@ -17,6 +17,8 @@ import sys
 
 import pytest
 
+from OpenGLContext_qt.available import gui_unavailable
+
 #: The size asked for. Comfortably above the smallest top-level window a
 #: platform will make -- Windows will not give one narrower than about 150
 #: pixels, whatever is asked -- so that what this measures is the context and
@@ -50,6 +52,9 @@ def reported(output, name):
 def built():
     """The subprocess's report, or the signal that killed it"""
     environment = dict(os.environ, OPENGLCONTEXT_HIDDEN='1')
+    reason = gui_unavailable(environment)
+    if reason is not None:
+        pytest.skip(reason)
     return subprocess.run(
         [sys.executable, '-c', DRIVE],
         capture_output=True, text=True, timeout=120, env=environment,
