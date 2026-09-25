@@ -91,7 +91,8 @@ select = [
     "S110", "S112", "BLE001", "TRY400",  # no swallowed or blanket-caught errors
     "DTZ",  # datetimes carry a time zone
     "S102", "S202", "S301", "S307", "S310",  # no exec, tar extractall, pickle, eval or urlopen
-    "UP007",  # X | Y rather than Union and Optional
+    "UP006", "UP007", "UP035",  # builtin generics, X | Y, collections.abc imports
+    "RUF100",  # every noqa silences something
 ]
 ignore = [
     "E501",  # line too long (handled by the formatter)

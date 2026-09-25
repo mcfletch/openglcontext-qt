@@ -36,8 +36,8 @@ depth and expandability such a model is written from.
 The same program is written for Tk and wx in :mod:`OpenGLContext.demos`.
 """
 import sys
-from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Sequence
+from typing import Any, Optional
 
 from OpenGLContext.outline import OutlinePath, SceneOutline, nodeSummary
 from OpenGLContext.viewer import viewerFor

@@ -11,7 +11,7 @@ counting upward from the bottom, and the two differ on any scaled display, so
 the conversion happens once, here.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional
 
 from OpenGLContext.events import eventhandlermixin, keyboardevents, mouseevents
 from OpenGLContext.events.mouseevents import WHEEL_UP
@@ -57,7 +57,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         # base of either name here would put a second copy in the MRO.
         def addPickEvent(self, event: Any) -> None: ...
         def triggerPick(self) -> None: ...
-        def getViewPort(self) -> Tuple[int, int]: ...
+        def getViewPort(self) -> tuple[int, int]: ...
         def recentrePointer(self) -> None: ...
         #: Takes the event rather than a point, unlike the other backends'
         #: method of this name: Qt answers a warp in *global* coordinates,
@@ -222,7 +222,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
                 WHEEL_DETENT)
         return counter.notches(rotation)
 
-    def _framebufferPoint(self, event: Any) -> Tuple[float, float]:
+    def _framebufferPoint(self, event: Any) -> tuple[float, float]:
         """A Qt event's position in framebuffer pixels, y still counting down.
 
         Qt reports positions in logical window pixels, while the viewport and
@@ -236,7 +236,7 @@ class EventHandlerMixin(eventhandlermixin.EventHandlerMixin):
         return int(position.x() * ratio), int(position.y() * ratio)
 
 
-def _modifiersOf(qtEvent: Any) -> Tuple[int, int, int]:
+def _modifiersOf(qtEvent: Any) -> tuple[int, int, int]:
     """The shift, control and alt triple a Qt event was delivered with
 
     A function rather than a method on the event classes, because the window
@@ -275,7 +275,7 @@ class QtXEvent(object):
     names.
     """
 
-    def _getModifiers(self, qtEvent: Any) -> Tuple[int, int, int]:
+    def _getModifiers(self, qtEvent: Any) -> tuple[int, int, int]:
         """The shift, control and alt triple for a Qt event"""
         return _modifiersOf(qtEvent)
 
@@ -287,7 +287,7 @@ class QtXEvent(object):
                 return local
         return None
 
-    def _getButtons(self, qtEvent: Any) -> Tuple[int, ...]:
+    def _getButtons(self, qtEvent: Any) -> tuple[int, ...]:
         """Every button currently held, as OpenGLContext numbers them"""
         held = qtEvent.buttons()
         return tuple(local for local, marker in BUTTON_MAPPING if held & marker)
@@ -377,7 +377,7 @@ class QtKeypressEvent(QtXEvent, keyboardevents.KeypressEvent):
         self.name = qtEvent.text()
 
 
-def _keyboardMapping() -> Dict[Any, str]:
+def _keyboardMapping() -> dict[Any, str]:
     """The named (non-printable) keys, keyed by Qt's integer key code"""
     Key = QtCore.Qt.Key
     mapping = {

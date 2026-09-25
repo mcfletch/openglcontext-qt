@@ -27,7 +27,7 @@ import logging
 import os
 import sys
 import time
-from typing import Any, ClassVar, Dict, Tuple
+from typing import Any, ClassVar
 
 from OpenGLContext import interactivecontext, vrmlcontext
 from OpenGLContext.context import Context
@@ -332,7 +332,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
                 self.describeFormat(got),
             )
 
-    def framebufferSize(self) -> Tuple[int, int]:
+    def framebufferSize(self) -> tuple[int, int]:
         """The window's size in the physical pixels the viewport is measured in
 
         Qt sizes a window in logical pixels, which on a scaled display are
@@ -573,7 +573,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
     #: Qt's own cursor shapes, by the name a control asks for. Qt carries a
     #: picture for each rather than reading a desktop theme, so every one of
     #: these is there wherever Qt runs.
-    CURSOR_SHAPES: ClassVar[Dict[str, str]] = {
+    CURSOR_SHAPES: ClassVar[dict[str, str]] = {
         'arrow': 'ArrowCursor',
         'hand': 'PointingHandCursor',
         'text': 'IBeamCursor',

@@ -18,11 +18,11 @@ import time
 os.environ.setdefault('OPENGLCONTEXT_NO_VSYNC', '1')
 os.environ['OPENGLCONTEXT_DISABLE_FPS_DISPLAY'] = '1'
 
-from PySide6 import QtCore, QtWidgets                           # noqa: E402
-from vrml import protofunctions                                 # noqa: E402
+from PySide6 import QtCore, QtWidgets
+from vrml import protofunctions
 
-from OpenGLContext.scenegraph import basenodes                  # noqa: E402
-from OpenGLContext_qt.demos.qt_viewer import (                  # noqa: E402
+from OpenGLContext.scenegraph import basenodes
+from OpenGLContext_qt.demos.qt_viewer import (
     PATH_ROLE, ViewerWindow,
 )
 
