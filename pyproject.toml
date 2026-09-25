@@ -87,6 +87,11 @@ select = [
     "B",   # flake8-bugbear
     "PGH003", "PGH004",  # a type: ignore or noqa names the codes it silences
     "PLE0604", "PLE0605",  # __all__ is a list or tuple of strings
+    "RUF012",  # a mutable class attribute is annotated ClassVar
+    "S110", "S112", "BLE001", "TRY400",  # no swallowed or blanket-caught errors
+    "DTZ",  # datetimes carry a time zone
+    "S102", "S202", "S301", "S307", "S310",  # no exec, tar extractall, pickle, eval or urlopen
+    "UP007",  # X | Y rather than Union and Optional
 ]
 ignore = [
     "E501",  # line too long (handled by the formatter)
