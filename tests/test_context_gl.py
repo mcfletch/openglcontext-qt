@@ -7,6 +7,8 @@ display scaling, a render that goes to the wrong framebuffer -- are all
 invisible without a window on a screen.
 """
 
+import gc
+import logging
 import subprocess
 import sys
 
@@ -443,12 +445,8 @@ def test_opening_and_closing_many_views_does_not_kill_the_process(gl):
     not a complete guard: the fault it is modelled on takes a wider mixture of
     windows than one test makes, and the suite as a whole is what catches that.
     """
-    import gc
-
-    from OpenGLContext_qt.qtcontext import QtInteractiveContext
-
     for _ in range(12):
-        context = QtInteractiveContext(size=(64, 64))
+        context = qtcontext.QtInteractiveContext(size=(64, 64))
         context.OnDraw(force=1)
         context.setPointerCapture(True)
         context.setPointerCapture(False)
@@ -458,7 +456,7 @@ def test_opening_and_closing_many_views_does_not_kill_the_process(gl):
 
     # Rendering in a survivor rather than merely reaching this line: the claim
     # is that the process came through it with GL still usable.
-    survivor = QtInteractiveContext(size=(64, 64))
+    survivor = qtcontext.QtInteractiveContext(size=(64, 64))
     try:
         survivor.OnDraw(force=1)
         assert survivor.glContext.isValid()
@@ -480,8 +478,6 @@ def test_a_vsync_change_is_reported_rather_than_pretended(context_factory, caplo
     """The swap interval is part of the surface format, which is settled when
     the GL context is made; a settings screen that showed it changing would be
     lying about what the window is doing."""
-    import logging
-
     context = context_factory(vsync=True)
     context.contextDefinition.vsync = False
     with caplog.at_level(logging.INFO):

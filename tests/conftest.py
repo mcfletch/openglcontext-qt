@@ -13,6 +13,8 @@ platform plugin in use cannot give a window a drawable GL surface.
 import pytest
 from PySide6 import QtGui
 
+from OpenGLContext_qt.qtcontext import QtInteractiveContext
+
 
 @pytest.fixture(scope='session')
 def application():
@@ -35,8 +37,6 @@ def drawable(application):
     Answered by making one and asking OpenGL, rather than by guessing from the
     platform's name: the same plugin works on one machine and not on the next.
     """
-    from OpenGLContext_qt.qtcontext import QtInteractiveContext
-
     context = QtInteractiveContext(size=(64, 64))
     try:
         context.setCurrent()
@@ -71,7 +71,7 @@ def context_factory(gl):
 
     def factory(cls=None, **named):
         if cls is None:
-            from OpenGLContext_qt.qtcontext import QtInteractiveContext as cls
+            cls = QtInteractiveContext
         context = cls(**named)
         made.append(context)
         return context

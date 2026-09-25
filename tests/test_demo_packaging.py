@@ -18,6 +18,8 @@ import os
 import runpy
 import tomllib
 
+from OpenGLContext import packaging
+
 import OpenGLContext_qt
 
 PACKAGING = os.path.join(os.path.dirname(OpenGLContext_qt.__file__),
@@ -63,8 +65,6 @@ class TestTheCommandsResolve:
 
 class TestWhatTheBuildsAreToldAboutQt:
     def test_the_bundle_keeps_qt_and_leaves_the_rest(self):
-        from OpenGLContext import packaging
-
         excluded = packaging.unused_backend_modules(keep=['qt'])
         assert 'PySide6' not in excluded
         assert 'tkinter' in excluded and 'wx' in excluded

@@ -93,6 +93,7 @@ select = [
     "S102", "S202", "S301", "S307", "S310",  # no exec, tar extractall, pickle, eval or urlopen
     "UP006", "UP007", "UP035",  # builtin generics, X | Y, collections.abc imports
     "RUF100",  # every noqa silences something
+    "PLC0415",  # imports at module top, unless a lazy one says why
 ]
 ignore = [
     "E501",  # line too long (handled by the formatter)

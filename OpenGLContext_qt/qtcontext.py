@@ -23,13 +23,15 @@ context that a request without a profile produces has none of the entry points
 this engine calls.
 """
 
+import cProfile
 import logging
 import os
 import sys
 import time
 from typing import Any, ClassVar
 
-from OpenGLContext import interactivecontext, vrmlcontext
+from OpenGL.GL import GL_DRAW_BUFFER, GL_NONE, glGetIntegerv
+from OpenGLContext import contextresources, interactivecontext, renderoptions, vrmlcontext
 from OpenGLContext.context import Context
 from OpenGLContext.looptrace import LoopTrace
 from OpenGLContext.move import viewplatformmixin
@@ -418,8 +420,6 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
 
         Returns whether the surface can be drawn into.
         """
-        from OpenGL.GL import GL_DRAW_BUFFER, GL_NONE, glGetIntegerv
-
         if int(glGetIntegerv(GL_DRAW_BUFFER)) != GL_NONE:
             return True
         log.error(
@@ -457,8 +457,6 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         window is current, which is the only moment the answer is about this
         window.
         """
-        from OpenGLContext import contextresources
-
         return contextresources.context_key()
 
     def SwapBuffers(self) -> None:
@@ -517,8 +515,6 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         window-level settings, the swap interval and whether the window fills
         the screen.
         """
-        from OpenGLContext import renderoptions
-
         self.applyVSync()
         self.setFullscreen(renderoptions.fullscreen_window(self))
         Context.settingsChanged(self)
@@ -775,8 +771,6 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         glContext = self.glContext
         if glContext is None:
             return
-        from OpenGLContext import contextresources
-
         if glContext.makeCurrent(self):
             try:
                 contextresources.context_lost()
@@ -826,8 +820,6 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         instance = cls(*args, **named)
         definition = instance.contextDefinition
         if definition is not None and definition.profileFile:
-            import cProfile
-
             return cProfile.runctx(
                 "instance.MainLoop()",
                 globals(),
@@ -844,7 +836,7 @@ class QtContext(qtevents.EventHandlerMixin, Context, QtGui.QWindow):
         an application's controls.  Requires ``PySide6.QtWidgets``, and so a
         ``QApplication`` rather than a bare ``QGuiApplication``.
         """
-        from PySide6 import QtWidgets
+        from PySide6 import QtWidgets  # noqa: PLC0415 a native library of its own, loaded only for a widget layout
 
         return QtWidgets.QWidget.createWindowContainer(self, parent)
 

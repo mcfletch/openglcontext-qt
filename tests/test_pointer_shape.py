@@ -3,21 +3,18 @@
 The engine asks every backend for a shape by one of its ``CURSORS`` names
 through ``setPointerShape``; Qt's own ``setCursor`` takes a ``QCursor``.
 """
-import pytest
+from OpenGLContext.context import CURSORS
+from PySide6 import QtCore
 
-PySide6 = pytest.importorskip('PySide6')
-
-from OpenGLContext_qt.qtcontext import QtContext  # noqa: E402
+from OpenGLContext_qt.qtcontext import QtContext
 
 
 def test_its_table_is_written_in_the_engines_names():
-    from OpenGLContext.context import CURSORS
     for name in QtContext.CURSOR_SHAPES:
         assert name in CURSORS, name
 
 
 def test_every_shape_it_names_is_one_qt_has():
-    from PySide6 import QtCore
     for name, shape in QtContext.CURSOR_SHAPES.items():
         assert getattr(QtCore.Qt.CursorShape, shape, None) is not None, name
 
