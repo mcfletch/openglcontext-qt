@@ -1,7 +1,7 @@
 """PySide6 (Qt 6) window system for OpenGLContext
 
 The ``qt`` window system is declared in this distribution's metadata, in the
-``OpenGLContext.windowsystems`` entry-point group, so OpenGLContext finds it
+``openglcontext.windowsystems`` entry-point group, so OpenGLContext finds it
 without importing anything here: ``windowsystem='qt'`` in a definition, or
 ``OPENGLCONTEXT_BACKEND=qt``, opens a context on it.  The window system is
 :mod:`OpenGLContext_qt.windowsystem`; :mod:`OpenGLContext_qt.qtcontext` names

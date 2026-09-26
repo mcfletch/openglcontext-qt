@@ -53,7 +53,7 @@ dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
 
 # OpenGLContext reads this group to learn which window systems are installed,
 # without importing any of them: `windowsystem='qt'` resolves through it.
-[project.entry-points."OpenGLContext.windowsystems"]
+[project.entry-points."openglcontext.windowsystems"]
 qt = "OpenGLContext_qt.windowsystem:QtWindowSystem"
 
 [project.urls]

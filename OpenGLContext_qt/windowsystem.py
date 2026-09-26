@@ -1,7 +1,7 @@
 """The Qt window system: a QWindow with a QOpenGLContext of its own
 
 Registered with OpenGLContext as the ``qt`` window system through the
-``OpenGLContext.windowsystems`` entry point, so ``windowsystem='qt'`` in a
+``openglcontext.windowsystems`` entry point, so ``windowsystem='qt'`` in a
 definition, or ``OPENGLCONTEXT_BACKEND=qt``, opens a context here.
 
 **The window is a** :class:`~PySide6.QtGui.QWindow` **with a**

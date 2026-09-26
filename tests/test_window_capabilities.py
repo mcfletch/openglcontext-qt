@@ -1,7 +1,7 @@
-"""The window-level capabilities every OpenGLContext backend offers.
+"""The window-level capabilities every OpenGLContext window system offers.
 
 A project on Qt should be choosing a window system, not a subset of the engine,
-so this backend is held to the same contract as the ones in the engine's own
+so this window system is held to the same contract as the ones in the engine's own
 distribution: pointer capture for mouse-look, full screen at run time, and a
 report of what the swap interval can be told to do.
 
@@ -18,23 +18,31 @@ import pytest
 from PySide6 import QtCore, QtGui
 
 from OpenGLContext.context import Context
-from OpenGLContext_qt.qtcontext import QtContext
+from OpenGLContext.windowsystem.base import WindowSystem
+
+from OpenGLContext_qt.windowsystem import QtWindowSystem
 
 
 class TestTheContractIsMet:
-    """The methods the engine's base class declares, answered here."""
+    """The methods the engine's base classes declare, answered here."""
 
     @pytest.mark.parametrize('capability', [
         'setPointerCapture', 'setFullscreen', 'applyVSync',
     ])
-    def test_the_backend_answers_for_itself(self, capability):
-        assert capability in QtContext.__dict__, (
+    def test_the_window_system_answers_for_itself(self, capability):
+        assert capability in QtWindowSystem.__dict__, (
             'Qt inherits the base answer for %s' % (capability,))
 
     @pytest.mark.parametrize('capability', [
         'setPointerCapture', 'setFullscreen', 'applyVSync',
     ])
     def test_the_base_class_declares_it(self, capability):
+        assert callable(getattr(WindowSystem, capability, None))
+
+    @pytest.mark.parametrize('capability', [
+        'setPointerCapture', 'setFullscreen', 'applyVSync',
+    ])
+    def test_a_context_offers_it(self, capability):
         assert callable(getattr(Context, capability, None))
 
 
@@ -42,34 +50,34 @@ class TestFullScreen:
     def test_a_window_can_fill_the_screen(self, context_factory):
         context = context_factory()
         assert context.setFullscreen(True) is True
-        assert context.windowState() & QtCore.Qt.WindowState.WindowFullScreen
+        assert context.window.windowState() & QtCore.Qt.WindowState.WindowFullScreen
 
     def test_and_come_back_from_it(self, context_factory):
         context = context_factory()
         context.setFullscreen(True)
         assert context.setFullscreen(False) is True
-        assert not (context.windowState()
+        assert not (context.window.windowState()
                     & QtCore.Qt.WindowState.WindowFullScreen)
 
     def test_asking_for_what_it_already_is_is_no_work(self, context_factory):
         context = context_factory()
         assert context.setFullscreen(False) is True
-        assert not (context.windowState()
+        assert not (context.window.windowState()
                     & QtCore.Qt.WindowState.WindowFullScreen)
 
     def test_the_gl_context_survives_the_trip(self, context_factory):
         """Everything the engine has uploaded lives in it."""
         context = context_factory()
-        before = context.glContext
+        before = context.windowsystem.glContext
         context.setFullscreen(True)
         context.setFullscreen(False)
-        assert context.glContext is before
+        assert context.windowsystem.glContext is before
 
     def test_a_settings_change_is_applied(self, context_factory):
         context = context_factory()
         context.contextDefinition.fullscreen = True
         context.settingsChanged()
-        assert context.windowState() & QtCore.Qt.WindowState.WindowFullScreen
+        assert context.window.windowState() & QtCore.Qt.WindowState.WindowFullScreen
 
 
 class TestVSync:
@@ -102,13 +110,13 @@ class TestHeldKeys:
 
     def test_a_key_that_goes_down_is_held(self, context_factory):
         context = context_factory()
-        context.keyPressEvent(self._press())
+        context.window.keyPressEvent(self._press())
         assert int(QtCore.Qt.Key.Key_W) in context.heldKeys()
 
     def test_a_key_that_comes_up_is_not(self, context_factory):
         context = context_factory()
-        context.keyPressEvent(self._press())
-        context.keyReleaseEvent(QtGui.QKeyEvent(
+        context.window.keyPressEvent(self._press())
+        context.window.keyReleaseEvent(QtGui.QKeyEvent(
             QtCore.QEvent.Type.KeyRelease, QtCore.Qt.Key.Key_W,
             QtCore.Qt.KeyboardModifier.NoModifier, 'w'))
         assert context.heldKeys() == {}
@@ -120,8 +128,8 @@ class TestHeldKeys:
         # one with no other reference to it dies before it is ever called.
         context.addEventHandler('keyboard', name='w', state=0,
                                 modifiers=(0, 0, 0), function=watcher.saw)
-        context.keyPressEvent(self._press())
-        context.focusOutEvent(QtGui.QFocusEvent(
+        context.window.keyPressEvent(self._press())
+        context.window.focusOutEvent(QtGui.QFocusEvent(
             QtCore.QEvent.Type.FocusOut))
         assert context.heldKeys() == {}
         assert watcher.events, 'the key stayed down for the rest of the session'
@@ -131,11 +139,11 @@ class TestHeldKeys:
         watcher = _Watcher()
         context.addEventHandler('keyboard', name='w', state=1,
                                 modifiers=(0, 0, 0), function=watcher.saw)
-        context.keyPressEvent(self._press())
+        context.window.keyPressEvent(self._press())
         later = time.time() + 60
         context.pumpKeyRepeats(now=later)
         assert len(watcher.events) == 2, 'the press, then one synthetic repeat'
-        context.keyPressEvent(self._press(repeat=True))
+        context.window.keyPressEvent(self._press(repeat=True))
         del watcher.events[:]
         context.pumpKeyRepeats(now=later + 60)
         assert watcher.events == []

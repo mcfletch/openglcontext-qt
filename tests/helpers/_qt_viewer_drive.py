@@ -163,7 +163,7 @@ def quitting():
     window = built(MODEL)
     loaded(window)
     window.close()
-    say('RELEASED', window.view.glContext is None)
+    say('RELEASED', window.view.windowsystem.glContext is None)
     say('WATCHING', window.watching is None)
     say('OUTLINE', window.outline.rows == [])
     say('WINDOW', not window.isVisible())
