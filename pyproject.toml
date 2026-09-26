@@ -51,6 +51,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
 
+# OpenGLContext reads this group to learn which window systems are installed,
+# without importing any of them: `windowsystem='qt'` resolves through it.
+[project.entry-points."OpenGLContext.windowsystems"]
+qt = "OpenGLContext_qt.windowsystem:QtWindowSystem"
+
 [project.urls]
 Homepage = "http://pyopengl.sourceforge.net/context/"
 Repository = "https://github.com/mcfletch/openglcontext-qt"
