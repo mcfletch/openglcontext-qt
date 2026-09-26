@@ -223,14 +223,14 @@ class QtWindow(QtGui.QWindow):
         super().__init__(parent)
         self.system = system
 
-    def exposeEvent(self, event: Any) -> None:
-        self.system.onExpose(event)
+    def exposeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
+        self.system.onExpose()
 
-    def resizeEvent(self, event: Any) -> None:
-        self.system.onResize(event)
+    def resizeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
+        self.system.onResize()
 
-    def closeEvent(self, event: Any) -> None:
-        self.system.onClose(event)
+    def closeEvent(self, event: Any) -> None:  # noqa: ARG002 QWindow's virtual
+        self.system.onClose()
 
     def keyPressEvent(self, event: Any) -> None:
         self.system.onKeyPress(event)
@@ -239,7 +239,7 @@ class QtWindow(QtGui.QWindow):
         self.system.onKeyRelease(event)
 
     def focusOutEvent(self, event: Any) -> None:
-        self.system.onFocusOut(event)
+        self.system.onFocusOut()
         super().focusOutEvent(event)
 
     def mouseMoveEvent(self, event: Any) -> None:
@@ -517,6 +517,7 @@ class QtWindowSystem(WindowSystem):
         """
         from PySide6 import QtWidgets  # noqa: PLC0415 a native library of its own, loaded only for a widget layout
 
+        assert self.window is not None, 'the window has been released'
         return QtWidgets.QWidget.createWindowContainer(self.window, parent)
 
     # -- current and presenting --------------------------------------------
@@ -762,7 +763,7 @@ class QtWindowSystem(WindowSystem):
 
     # -- the window's events ------------------------------------------------
 
-    def onExpose(self, event: Any) -> None:
+    def onExpose(self) -> None:
         """Finish initialisation and size the viewport once there is a surface"""
         window = self.window
         if not self.engineReady or window is None or not window.isExposed():
@@ -774,7 +775,7 @@ class QtWindowSystem(WindowSystem):
             context.completeInit()
         context.OnResize(*self.drawableSize())
 
-    def onResize(self, event: Any) -> None:
+    def onResize(self) -> None:
         """Follow the window's size with the viewport"""
         window = self.window
         if (not self.engineReady or window is None or not window.isExposed()
@@ -782,7 +783,7 @@ class QtWindowSystem(WindowSystem):
             return
         self.context.OnResize(*self.drawableSize())
 
-    def onClose(self, event: Any) -> None:
+    def onClose(self) -> None:
         """Treat closing the window as quitting"""
         self.context.OnQuit()
 
@@ -835,7 +836,7 @@ class QtWindowSystem(WindowSystem):
         made.state = state
         context.ProcessEvent(made)
 
-    def onFocusOut(self, event: Any) -> None:
+    def onFocusOut(self) -> None:
         """Forget what is held when the window loses focus.
 
         No key-up arrives for a key that was down when focus went elsewhere, so

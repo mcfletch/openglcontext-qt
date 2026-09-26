@@ -154,7 +154,7 @@ def test_input_before_the_engine_exists_is_dropped():
 
 def test_losing_focus_before_the_engine_exists_is_survivable():
     system = System(ready=False)
-    system.onFocusOut(None)
+    system.onFocusOut()
     assert system.context.state.cleared == 0
 
 
@@ -258,7 +258,7 @@ def test_losing_focus_forgets_what_was_held():
     keeps moving with nobody touching the keyboard.
     """
     system = System()
-    system.onFocusOut(None)
+    system.onFocusOut()
     assert system.context.state.cleared == 1
 
 
@@ -266,7 +266,7 @@ def test_losing_focus_sends_the_release_qt_never_will():
     system = System()
     system.onKeyPress(keyEvent(QtCore.Qt.Key.Key_W, text='w'))
     system.context.processed = []
-    system.onFocusOut(None)
+    system.onFocusOut()
     assert system.context.heldKeys() == {}
     assert [(event.name, event.state) for event in system.context.processed] == [
         ('w', 0)]
