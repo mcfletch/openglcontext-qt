@@ -1,12 +1,13 @@
 # OpenGLContext-qt
 
-A Qt 6 / PySide6 backend for [OpenGLContext](https://github.com/mcfletch/openglcontext),
+A Qt 6 / PySide6 window system for [OpenGLContext](https://github.com/mcfletch/openglcontext),
 so an OpenGLContext scene can be a window in a Qt application — or an
 application of its own that happens to be built on Qt.
 
-The backend registers itself with OpenGLContext's plugin system under the name
-`qt`, and supports both the compatibility (fixed-function) and core
-(shader) profiles along with the rest of the `ContextDefinition` fields.
+The package declares its window system to OpenGLContext under the name `qt`,
+through the `openglcontext.windowsystems` entry point, and supports both the
+compatibility (fixed-function) and core (shader) profiles along with the rest
+of the `ContextDefinition` fields.
 
 ## Installation
 
@@ -20,32 +21,23 @@ is not used here.
 
 ## Usage
 
-Your code never has to import this package. Importing it is what registers the
-backend — but `OpenGLContext/__init__.py` does that itself, in a try/except, so
-`import OpenGLContext` picks up the `qt` plugin whenever this package is
-installed and silently does not when it is not. Choosing the backend is
-therefore all an application does:
+Your code never has to import this package: installing it is what makes `qt`
+a window system OpenGLContext can open, since the engine reads the installed
+packages' entry points.  Choosing it is all an application does, from the
+environment:
 
 ```bash
-OPENGLCONTEXT_BACKEND=qt oglc-gltf model.gltf
+OPENGLCONTEXT_BACKEND=qt oglc-view model.gltf
 ```
 
-In code, either ask OpenGLContext for the backend by name:
+or in the context's definition:
 
 ```python
 from OpenGLContext.context import Context
-
-BaseContext = Context.getContextType('qt')
-```
-
-or subclass a Qt context directly:
-
-```python
 from OpenGLContext.scenegraph import basenodes
-from OpenGLContext_qt.qtcontext import QtViewerContext
 
 
-class MyContext(QtViewerContext):
+class MyContext(Context):
     def OnInit(self):
         self.sg = basenodes.sceneGraph(children=[
             basenodes.Shape(geometry=basenodes.Teapot()),
@@ -53,16 +45,14 @@ class MyContext(QtViewerContext):
 
 
 if __name__ == '__main__':
-    MyContext.ContextMainLoop()
+    MyContext.ContextMainLoop(windowsystem='qt')
 ```
 
-Three contexts are available, matching the rest of OpenGLContext:
-
-| Class                  | What it adds                                          |
-| ---------------------- | ----------------------------------------------------- |
-| `QtContext`            | A window, a GL context, and the render loop           |
-| `QtInteractiveContext` | Camera movement, mouse and keyboard interaction       |
-| `QtViewerContext`      | Opening a scene file: VRML97, OBJ or glTF             |
+`OpenGLContext_qt.qtcontext.QtContext` is `Context` with `qt` pinned, taking
+an optional parent `QWindow` as its second argument; `QtInteractiveContext`
+and `QtViewerContext` name the same class.  `context.window` is the
+`QWindow`, and `context.windowsystem` the
+`OpenGLContext_qt.windowsystem.QtWindowSystem` holding it.
 
 ### Inside a Qt application
 
@@ -75,7 +65,8 @@ none, so the context asks for one however it is built rather than only on the
 way into `ContextMainLoop`. Whichever call made the application owns it, and
 only its own windows may end it (see **Closing a view** below).
 
-To place the view in a widget layout, wrap it with `container()`:
+To place the view in a widget layout, wrap its window with the window
+system's `container()`, which is `QWidget.createWindowContainer(view.window)`:
 
 ```python
 from PySide6 import QtWidgets
@@ -83,8 +74,8 @@ from PySide6 import QtWidgets
 app = QtWidgets.QApplication([])
 window = QtWidgets.QMainWindow()
 
-view = MyContext()
-window.setCentralWidget(view.container())
+view = MyContext(windowsystem='qt')
+window.setCentralWidget(view.windowsystem.container())
 window.show()
 
 view.MainLoop()
@@ -101,7 +92,7 @@ python -m OpenGLContext_qt.demos.qt_viewer model.glb
 The same program in Tk and wx ships with the engine, in `OpenGLContext/demos/`,
 and `docs/embedding.html` there covers what each toolkit needs.
 
-Escape quits, as it does under every OpenGLContext backend — but only the
+Escape quits, as it does under every OpenGLContext window system — but only the
 process it started. A context created inside somebody else's `QApplication`
 closes its own window and leaves the host program running. Rebind the key if
 you want something else:
@@ -120,14 +111,14 @@ closing views for the life of a session is a supported thing to do.
 
 ### A `QWindow`, not a `QOpenGLWidget`
 
-The context is a `QWindow` with a `QOpenGLContext` of its own. A
+The context's window is a `QWindow` with a `QOpenGLContext` of its own. A
 `QOpenGLWidget` renders into a framebuffer object that Qt composites, so *its*
 screen is not framebuffer 0 — and OpenGLContext's render passes bind
 framebuffer 0 whenever they finish with one of their own: the bloom composite,
 the selection buffer's blit, the back-buffer read behind every screenshot.
 Under a `QOpenGLWidget` each of those would quietly go to the wrong target. A
 `QWindow` draws to a real window surface, so every render path behaves exactly
-as it does under the GLUT and GLFW backends. `container()` is how such a
+as it does under the GLUT and GLFW window systems. `container()` is how such a
 window joins a widget interface.
 
 ### Desktop OpenGL, explicitly
@@ -148,7 +139,7 @@ event cascade followed by a render; only the cascade always has work
 to draw. The timer expresses that directly, and lets a burst of input events
 coalesce into one render instead of forcing a render each. Its interval is
 `drawPollTimeout`, and `OPENGLCONTEXT_STALL_MS` reports the phases of an
-iteration the same way it does for the other backends.
+iteration the same way it does for the other window systems.
 
 ## ContextDefinition support
 
@@ -167,12 +158,12 @@ Qt surface format:
 | `debug`                                   | `DebugContext`                                  |
 | `vsync`                                   | `setSwapInterval`                               |
 | `profileFile`                             | `cProfile` around the main loop                 |
-| `pickEnabled`, `pickAsync`, `debug*`      | read by the engine, backend-independent         |
+| `pickEnabled`, `pickAsync`, `debug*`      | read by the engine, the same on every window system |
 
 The rendering features — `shadows`, `bloom`, `ibl`, `transmission`,
 `instancing`, `tessellationLOD`, `maximumLights`, `uiScale`, `audio` and the
 rest — are read from the definition by the render passes, so they behave here
-exactly as under any other backend, including live changes from the settings
+exactly as under any other window system, including live changes from the settings
 overlay.
 
 Three things are worth knowing:
@@ -184,7 +175,7 @@ Three things are worth knowing:
   change made in the settings overlay is reported and takes effect next run.
 - **`OPENGLCONTEXT_HIDDEN` is not supported.** Qt's offscreen surfaces have no
   default framebuffer to render into on the common EGL platforms. Use the
-  `glfw` backend for headless capture.
+  `glfw` window system for headless capture.
 
 ## Mouse-look
 
