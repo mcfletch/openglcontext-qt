@@ -1,7 +1,7 @@
 """What a ContextDefinition asks Qt for
 
 The mapping from OpenGLContext's description of a window to Qt's is where a
-backend quietly loses features: a field nobody translated is a setting the user
+window system quietly loses features: a field nobody translated is a setting the user
 changed and nothing obeyed.  These tests are the record of which field means
 what, and they need no window -- a QSurfaceFormat is a value.
 """
@@ -12,8 +12,8 @@ import pytest
 from OpenGLContext.contextdefinition import ContextDefinition
 from PySide6 import QtGui
 
-from OpenGLContext_qt import qtcontext
-from OpenGLContext_qt.qtcontext import CORE_VERSION, surfaceFormatFromDefinition
+from OpenGLContext_qt import windowsystem
+from OpenGLContext_qt.windowsystem import CORE_VERSION, surfaceFormatFromDefinition
 
 Format = QtGui.QSurfaceFormat
 
@@ -154,26 +154,26 @@ def test_nothing_is_said_when_no_accumulation_buffer_was_asked_for(caplog):
 
 @pytest.mark.parametrize('value', ['1', 'true', 'YES', 'on'])
 def test_a_hidden_window_is_recognised_as_a_request(value, monkeypatch):
-    """The other backends answer it; a request this one cannot meet has to be
-    seen before it can be reported."""
-    monkeypatch.setenv(qtcontext.HIDDEN_ENV, value)
-    assert qtcontext.hiddenRequested()
+    """The other window systems answer it; a request this one cannot meet has
+    to be seen before it can be reported."""
+    monkeypatch.setenv(windowsystem.HIDDEN_ENV, value)
+    assert windowsystem.hiddenRequested()
 
 
 @pytest.mark.parametrize('value', ['', '0', 'off', 'no', ' '])
 def test_anything_else_is_not_a_request_for_one(value, monkeypatch):
-    monkeypatch.setenv(qtcontext.HIDDEN_ENV, value)
-    assert not qtcontext.hiddenRequested()
+    monkeypatch.setenv(windowsystem.HIDDEN_ENV, value)
+    assert not windowsystem.hiddenRequested()
 
 
 def test_a_value_that_is_neither_yes_nor_no_is_reported(monkeypatch, caplog):
     """The engine's reading of the switch, so a typo in a CI pin is seen."""
-    monkeypatch.setenv(qtcontext.HIDDEN_ENV, 'yse')
+    monkeypatch.setenv(windowsystem.HIDDEN_ENV, 'yse')
     with caplog.at_level(logging.WARNING):
-        assert not qtcontext.hiddenRequested()
-    assert qtcontext.HIDDEN_ENV in caplog.text
+        assert not windowsystem.hiddenRequested()
+    assert windowsystem.HIDDEN_ENV in caplog.text
 
 
 def test_an_unset_variable_asks_for_nothing(monkeypatch):
-    monkeypatch.delenv(qtcontext.HIDDEN_ENV, raising=False)
-    assert not qtcontext.hiddenRequested()
+    monkeypatch.delenv(windowsystem.HIDDEN_ENV, raising=False)
+    assert not windowsystem.hiddenRequested()

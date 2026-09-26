@@ -12,16 +12,16 @@ knowing about.
 
 The whole of the engine in here is four calls, and the rest is Qt:
 
-* :func:`OpenGLContext.viewer.viewerFor` gives the viewer over the Qt backend.
-  The window is a ``QWindow``, and
-  :meth:`~OpenGLContext_qt.qtcontext.QtContext.container` wraps it in a widget
-  that goes in a layout beside everything else.
+* :func:`OpenGLContext.viewer.viewerFor` gives the viewer on the Qt window
+  system.  ``view.window`` is a ``QWindow``, and
+  :meth:`~OpenGLContext_qt.windowsystem.QtWindowSystem.container` wraps it in
+  a widget that goes in a layout beside everything else.
 * :meth:`~OpenGLContext.viewer.sceneviewer.SceneViewerMixin.openSource` opens a
   path or a URL, on a worker thread.
 * :class:`~OpenGLContext.outline.SceneOutline` is the scene as rows, which fill
   the ``QTreeWidget``.
-* :meth:`~OpenGLContext_qt.qtcontext.QtContext.startRenderTimer` asks Qt to
-  drive the frames.  Qt's own timer calls ``loopIteration`` from then on, so
+* :meth:`~OpenGLContext_qt.windowsystem.QtWindowSystem.startRenderTimer` asks
+  Qt to drive the frames.  Qt's own timer calls ``loopIteration`` from then on, so
   unlike the Tk demo there is no per-frame callback here.
 
 **A ``QApplication``, not a ``QGuiApplication``**, and it has to exist before
@@ -114,7 +114,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         splitter = QtWidgets.QSplitter(self)
         splitter.addWidget(self.buildPanel(splitter))
-        splitter.addWidget(self.view.container(splitter))
+        splitter.addWidget(self.view.windowsystem.container(splitter))
         splitter.setStretchFactor(1, 3)
         self.setCentralWidget(splitter)
         self.buildMenu()
@@ -196,7 +196,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         """
         self.watch(None)
         self.outline.close()
-        self.view.stopRenderTimer()
+        self.view.windowsystem.stopRenderTimer()
         self.view.releaseWindow()
         super().closeEvent(event)
 
@@ -297,7 +297,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     window.show()
     # Qt's timer drives the engine's loop from here on.  Started after the
     # window is shown, since a frame is only drawn once there is a surface.
-    window.view.startRenderTimer()
+    window.view.windowsystem.startRenderTimer()
     return application.exec()
 
 

@@ -1,24 +1,25 @@
-"""The backend doing its actual job: a window, a GL context, and frames
+"""The window system doing its job: a window, a GL context, and frames
 
 These render for real.  A Qt context that has been mocked out proves only that
-the mocks agree with each other, and the mistakes this backend is most likely
-to make -- a surface format the driver will not give, a viewport that ignores
+the mocks agree with each other, and the mistakes this window system is most
+likely to make -- a surface format the driver will not give, a viewport that ignores
 display scaling, a render that goes to the wrong framebuffer -- are all
 invisible without a window on a screen.
 """
 
 import gc
 import logging
+import os
 import subprocess
 import sys
 
 import numpy as np
 import pytest
 from OpenGL import _dispatch, contextdata
-from OpenGLContext import plugins
+from OpenGLContext import windowsystem
 from OpenGLContext.capture import read_back_buffer
-from OpenGLContext.context import Context
 from OpenGLContext.scenegraph import basenodes
+from OpenGLContext.testingcontext import getInteractive
 from PySide6 import QtCore, QtGui
 
 from OpenGLContext_qt import qtcontext
@@ -56,57 +57,72 @@ class Scene(qtcontext.QtViewerContext):
 
 # -- registration -------------------------------------------------------------
 
-@pytest.mark.parametrize('kind,name', [
-    ('Context', 'QtContext'),
-    ('InteractiveContext', 'QtInteractiveContext'),
-    ('VRMLContext', 'QtViewerContext'),
-])
-def test_installing_this_package_is_enough_to_find_the_backend(kind, name):
+def test_installing_this_package_is_enough_to_find_the_window_system(
+        installed_metadata):
     """An application asks for ``qt`` and imports nothing of ours to get it.
 
     In a **subprocess** that imports only OpenGLContext, because that is the
-    whole claim: registration happens on ``import OpenGLContext_qt``, and what
-    makes it automatic is that ``OpenGLContext/__init__`` does that import
-    itself.  A test in this process proves nothing -- the package is already
-    imported here, by the tests themselves.
+    whole claim: the ``openglcontext.windowsystems`` entry point this
+    distribution declares is how the engine finds the window system, and the
+    package is imported only when the window system is loaded.  A test in this
+    process proves nothing -- the package is already imported here, by the
+    tests themselves.
+
+    ``installed_metadata`` is the entry point as an installer writes it, from
+    this checkout's ``pyproject.toml``.
     """
     source = (
+        "import sys\n"
         "import OpenGLContext\n"
-        "from OpenGLContext import plugins\n"
-        "from OpenGLContext.context import Context\n"
-        "found = Context.getContextType('qt', plugins.%s)\n"
-        "print(found.__name__ if found is not None else 'MISSING')\n" % (kind,)
+        "from OpenGLContext import windowsystem\n"
+        "print('REGISTERED', 'qt' in windowsystem.registered())\n"
+        "print('IMPORTED-BEFORE', 'OpenGLContext_qt' in sys.modules)\n"
+        "loaded = windowsystem.load('qt')\n"
+        "print('LOADED', loaded.__module__ + '.' + loaded.__name__)\n"
     )
+    environment = dict(os.environ)
+    environment['PYTHONPATH'] = os.pathsep.join(
+        [str(installed_metadata)] + sys.path)
     result = subprocess.run(
         [sys.executable, '-c', source],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120, env=environment,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.split()[-1] == name, result.stdout
+    lines = dict(line.split(' ', 1) for line in result.stdout.splitlines())
+    assert lines['REGISTERED'] == 'True', result.stdout
+    assert lines['IMPORTED-BEFORE'] == 'False', result.stdout
+    assert lines['LOADED'] == 'OpenGLContext_qt.windowsystem.QtWindowSystem', \
+        result.stdout
 
 
-def test_the_registry_names_the_backend_qt():
+def test_the_registry_names_the_window_system_qt():
     """The name an application spells in OPENGLCONTEXT_BACKEND."""
-    assert 'qt' in [plugin.name for plugin in plugins.InteractiveContext.all()]
+    assert 'qt' in windowsystem.registered()
 
 
-def test_asking_for_a_backend_nobody_registered_answers_nothing():
-    """So a mis-spelled backend name fails as a name, not as an import."""
-    assert Context.getContextType('qt-6', plugins.InteractiveContext) is None
+def test_the_name_answers_the_qt_context_class():
+    assert getInteractive('qt') is qtcontext.QtContext
+
+
+def test_asking_for_a_window_system_nobody_registered_says_so():
+    """So a mis-spelled name fails as a name, not as an import."""
+    with pytest.raises(windowsystem.WindowSystemUnavailable) as raised:
+        getInteractive('qt-6')
+    assert 'qt-6' in str(raised.value)
 
 
 # -- the window ---------------------------------------------------------------
 
 def test_a_compatibility_context_can_be_created(context_factory):
     context = context_factory(profile='compatibility')
-    assert context.glContext.isValid()
-    assert context.glContext.format().renderableType() == Format.RenderableType.OpenGL
+    assert context.windowsystem.glContext.isValid()
+    assert context.windowsystem.glContext.format().renderableType() == Format.RenderableType.OpenGL
 
 
 def test_a_core_context_gets_a_core_profile(context_factory):
     """The whole point of asking: the shader render path needs 3.3 core."""
     context = context_factory(profile='core')
-    format = context.glContext.format()
+    format = context.windowsystem.glContext.format()
     assert format.profile() == Format.OpenGLContextProfile.CoreProfile
     assert (format.majorVersion(), format.minorVersion()) >= qtcontext.CORE_VERSION
 
@@ -130,9 +146,10 @@ def test_the_viewport_is_sized_in_framebuffer_pixels(context_factory):
     """Not the window's logical size: on a scaled display the two differ, and a
     viewport in logical pixels leaves a band of the window undrawn."""
     context = context_factory(size=(320, 240))
-    assert context.getViewPort() == context.framebufferSize()
-    ratio = context.devicePixelRatio()
-    assert context.framebufferSize() == (int(320 * ratio), int(240 * ratio))
+    drawable = context.windowsystem.drawableSize()
+    assert context.getViewPort() == drawable
+    ratio = context.window.devicePixelRatio()
+    assert drawable == (int(320 * ratio), int(240 * ratio))
 
 
 def test_a_resize_takes_the_viewport_with_it(context_factory):
@@ -142,18 +159,18 @@ def test_a_resize_takes_the_viewport_with_it(context_factory):
 
 
 def test_the_window_is_titled(context_factory):
-    assert context_factory(title='A Window').title() == 'A Window'
+    assert context_factory(title='A Window').window.title() == 'A Window'
 
 
 def test_a_window_with_no_title_is_named_after_the_application(context_factory):
     context = context_factory()
-    assert context.title() == context.getApplicationName()
+    assert context.window.title() == context.getApplicationName()
 
 
 def test_asking_for_no_vsync_gets_no_vsync(context_factory):
     """Uncapping the frame rate is how a benchmark measures one."""
     context = context_factory(vsync=False)
-    assert context.format().swapInterval() == 0
+    assert context.window.format().swapInterval() == 0
 
 
 # -- rendering ----------------------------------------------------------------
@@ -168,11 +185,12 @@ def renderFrames(context, count=3):
 
 @pytest.mark.parametrize('profile', ['compatibility', 'core'])
 def test_a_scene_actually_reaches_the_screen(context_factory, profile):
-    """The end-to-end claim this backend exists to make.
+    """The end-to-end claim this window system exists to make.
 
     Anything less -- that OnDraw returned true, that no GL error was raised --
     is satisfied just as well by a context rendering into a framebuffer nobody
-    will ever see, which is exactly the failure a Qt backend is prone to.
+    will ever see, which is exactly the failure a Qt window system is prone
+    to.
     """
     context = context_factory(Scene, size=(320, 240), profile=profile)
     pixels = renderFrames(context)
@@ -194,7 +212,8 @@ def test_the_teapot_is_where_it_was_put(context_factory):
 def test_the_frame_fills_the_window(context_factory):
     context = context_factory(Scene, size=(320, 240))
     pixels = renderFrames(context)
-    assert (pixels.shape[1], pixels.shape[0]) == context.framebufferSize()
+    assert (pixels.shape[1], pixels.shape[0]) == \
+        context.windowsystem.drawableSize()
 
 
 def test_the_render_loop_draws(context_factory):
@@ -205,26 +224,27 @@ def test_the_render_loop_draws(context_factory):
 
 
 def test_the_loop_does_not_draw_before_the_window_is_ready(context_factory):
-    """Qt delivers timer events to a window that is still being built."""
+    """Qt delivers timer events to a window whose ``OnInit`` has not run."""
     context = context_factory(Scene, size=(160, 120))
-    context._ready = False  # noqa: SLF001 a window still inside __init__, which no public call leaves
+    context.initialised = False     # a window still waiting to be exposed
     assert not context.loopIteration()
+    assert not context.frames
 
 
 def test_the_timer_that_drives_the_loop_can_be_started_and_stopped(context_factory):
-    context = context_factory(size=(160, 120))
-    timer = context.startRenderTimer()
+    system = context_factory(size=(160, 120)).windowsystem
+    timer = system.startRenderTimer()
     assert timer
-    assert context.startRenderTimer() == timer   # not a second one
-    context.stopRenderTimer()
-    assert context._renderTimerId is None  # noqa: SLF001 whether a timer runs has no public reader
+    assert system.startRenderTimer() == timer   # not a second one
+    system.stopRenderTimer()
+    assert system.renderTimerId is None
 
 
 # -- input, as Qt actually delivers it ----------------------------------------
 
 def sendEvent(context, event):
-    """Hand Qt an event for this window, the way the window system would"""
-    QtGui.QGuiApplication.sendEvent(context, event)
+    """Hand Qt an event for this context's window, as the platform would"""
+    QtGui.QGuiApplication.sendEvent(context.window, event)
 
 
 def keyEvent(key, text, kind=QtGui.QKeyEvent.Type.KeyPress):
@@ -239,8 +259,8 @@ def mouseEvent(kind, x, y, button=QtCore.Qt.MouseButton.LeftButton):
 
 
 def test_a_key_dispatched_by_qt_reaches_a_binding(context_factory):
-    """The wiring, not the translation: Qt has to find the mix-in's handlers on
-    the real class for any of the rest of it to matter."""
+    """The wiring, not the translation: Qt has to find the window's event
+    handlers on the real class for any of the rest of it to matter."""
     context = context_factory(size=(160, 120))
     pressed = []
     context.handler = lambda event: pressed.append(event.name)   # held weakly
@@ -281,7 +301,7 @@ def test_a_click_dispatched_by_qt_reaches_the_pick_queue(context_factory):
 def test_the_click_lands_where_it_was_made(context_factory):
     context = context_factory(size=(160, 120))
     event = clicked(context, 20, 30)[0]
-    ratio = context.devicePixelRatio()
+    ratio = context.window.devicePixelRatio()
     assert event.pickPoint == (int(20 * ratio),
                                context.getViewPort()[1] - int(30 * ratio))
 
@@ -302,7 +322,7 @@ def test_grabbing_the_pointer_hides_it(context_factory):
     middle of the screen doing nothing."""
     context = context_factory()
     context.setPointerCapture(True)
-    assert context.cursor().shape() == QtCore.Qt.CursorShape.BlankCursor
+    assert context.window.cursor().shape() == QtCore.Qt.CursorShape.BlankCursor
 
 
 def test_capturing_says_whether_the_pointer_was_really_taken(context_factory):
@@ -312,14 +332,14 @@ def test_capturing_says_whether_the_pointer_was_really_taken(context_factory):
     # name: a platform that refuses the grab outright is one where "it really
     # was taken" cannot be asserted of anything, and the refusal is what the
     # case below covers instead.
-    if not context.setMouseGrabEnabled(True):
+    if not context.window.setMouseGrabEnabled(True):
         pytest.skip(
             'the %r Qt platform plugin does not grab the pointer for ordinary '
             'windows; test_a_refused_grab_is_reported_as_a_refusal covers what '
-            'this backend does about that'
+            'this window system does about that'
             % (QtGui.QGuiApplication.platformName(),)
         )
-    context.setMouseGrabEnabled(False)
+    context.window.setMouseGrabEnabled(False)
     assert context.setPointerCapture(True) is True
 
 
@@ -328,10 +348,10 @@ def test_a_refused_grab_is_reported_as_a_refusal(context_factory):
     that did not happen leaves mouse-look silently stopping at the window edge
     with nothing able to say why."""
     context = context_factory()
-    context.setMouseGrabEnabled = lambda _grab: False
+    context.window.setMouseGrabEnabled = lambda _grab: False
     assert context.setPointerCapture(True) is False
     # Hidden all the same: turning still works inside the window.
-    assert context.cursor().shape() == QtCore.Qt.CursorShape.BlankCursor
+    assert context.window.cursor().shape() == QtCore.Qt.CursorShape.BlankCursor
 
 
 def test_a_platform_that_refuses_once_is_not_asked_again(context_factory):
@@ -340,7 +360,7 @@ def test_a_platform_that_refuses_once_is_not_asked_again(context_factory):
     window exists."""
     context = context_factory()
     asked = []
-    context.setMouseGrabEnabled = lambda grab: asked.append(grab) or False
+    context.window.setMouseGrabEnabled = lambda grab: asked.append(grab) or False
     for _ in range(3):
         context.setPointerCapture(True)
         context.setPointerCapture(False)
@@ -351,7 +371,7 @@ def test_releasing_the_pointer_gives_it_back(context_factory):
     context = context_factory()
     context.setPointerCapture(True)
     assert context.setPointerCapture(False)
-    assert context.cursor().shape() != QtCore.Qt.CursorShape.BlankCursor
+    assert context.window.cursor().shape() != QtCore.Qt.CursorShape.BlankCursor
 
 
 def test_the_warp_the_window_made_is_recognised(context_factory):
@@ -359,7 +379,7 @@ def test_the_warp_the_window_made_is_recognised(context_factory):
     that provoked it and the view never turns."""
     context = context_factory()
     context.setPointerCapture(True)
-    assert context.pointerWarpEcho(_Motion(_centre(context)))
+    assert context.windowsystem.pointerWarpEcho(_Motion(_centre(context)))
 
 
 def test_only_the_one_warp_is_discarded(context_factory):
@@ -367,27 +387,28 @@ def test_only_the_one_warp_is_discarded(context_factory):
     context = context_factory()
     context.setPointerCapture(True)
     warped = _centre(context)
-    context.pointerWarpEcho(_Motion(warped))
-    assert not context.pointerWarpEcho(_Motion(warped))
+    context.windowsystem.pointerWarpEcho(_Motion(warped))
+    assert not context.windowsystem.pointerWarpEcho(_Motion(warped))
 
 
 def test_a_movement_somewhere_else_is_the_users(context_factory):
     context = context_factory()
     context.setPointerCapture(True)
     warped = _centre(context)
-    assert not context.pointerWarpEcho(
+    assert not context.windowsystem.pointerWarpEcho(
         _Motion(QtCore.QPoint(warped.x() + 17, warped.y())))
 
 
 def test_nothing_is_discarded_when_the_pointer_is_free(context_factory):
     context = context_factory()
-    assert not context.pointerWarpEcho(_Motion(QtCore.QPoint(1, 1)))
+    assert not context.windowsystem.pointerWarpEcho(_Motion(QtCore.QPoint(1, 1)))
 
 
 def _centre(context):
     """The middle of the window, in the global coordinates a warp is made in"""
-    return context.mapToGlobal(
-        QtCore.QPoint(context.width() // 2, context.height() // 2))
+    window = context.window
+    return window.mapToGlobal(
+        QtCore.QPoint(window.width() // 2, window.height() // 2))
 
 
 class _Motion(object):
@@ -410,23 +431,26 @@ def test_closing_a_view_does_not_take_the_host_program_with_it(context_factory):
     """A context inside somebody else's Qt application is one view in it, and
     escape must not end their process."""
     context = context_factory(size=(160, 120))
-    assert context.OnQuit() == 0
-    assert not context.isVisible()
+    context.OnQuit()            # returning at all is the claim: no exit
+    assert not context.window.isVisible()
 
 
 def test_quitting_twice_is_quitting_once(context_factory):
     """Closing the window raises a close event, which arrives back here; the
     second pass must not start letting go of the GL objects again."""
     context = context_factory(size=(160, 120))
+    released = []
+    context.releaseContextResources = released.append
     context.OnQuit()
-    assert context.OnQuit() == 0
-    assert context.glContext is None
+    context.OnQuit()
+    assert len(released) == 1
+    assert context.windowsystem.glContext is None
 
 
 def test_closing_the_window_quits_the_context(context_factory):
     context = context_factory(size=(160, 120))
-    context.close()
-    assert context.glContext is None
+    context.window.close()
+    assert context.windowsystem.glContext is None
 
 
 def test_the_gl_context_goes_before_the_window_it_draws_into(context_factory):
@@ -439,11 +463,11 @@ def test_the_gl_context_goes_before_the_window_it_draws_into(context_factory):
     whole.
     """
     context = context_factory(size=(64, 64))
-    assert context.glContext is not None
-    assert context.glContext.parent() is None, (
+    assert context.windowsystem.glContext is not None
+    assert context.windowsystem.glContext.parent() is None, (
         "the GL context is a child of the window, so Qt will destroy it last")
     context.OnQuit()
-    assert context.glContext is None
+    assert context.windowsystem.glContext is None
 
 
 @pytest.mark.usefixtures('gl')
@@ -475,12 +499,12 @@ def test_opening_and_closing_many_views_does_not_kill_the_process():
     survivor = qtcontext.QtInteractiveContext(size=(64, 64))
     try:
         survivor.OnDraw(force=1)
-        assert survivor.glContext.isValid()
+        assert survivor.windowsystem.glContext.isValid()
     finally:
         survivor.OnQuit()
 
 
-# ``QtContext.container`` has no test here on purpose.  Handing a live GL window
+# ``QtWindowSystem.container`` has no test here on purpose.  Handing a live GL window
 # to a widget container and then taking it back so the test can shut it down
 # destroys the platform window under the context, and the process goes with it;
 # what it would be testing is two lines of delegation to Qt's own

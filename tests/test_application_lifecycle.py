@@ -2,7 +2,7 @@
 
 Qt requires a ``QGuiApplication`` before any window exists, and ends the process
 with ``qFatal`` -- an abort, not an exception -- when a window is made without
-one.  So a backend that creates the application only on its way into the main
+one.  So a window system that creates the application only on its way into the main
 loop is one whose windows can only be made that way, and everything that builds
 a context and steps it itself (a test, a benchmark, a view embedded in a program
 with its own loop) ends the process instead of getting a window.
@@ -33,8 +33,9 @@ from OpenGLContext_qt.qtcontext import QtInteractiveContext
 context = QtInteractiveContext(size=%r)
 try:
     print('VIEWPORT %%s %%s' %% context.getViewPort())
-    print('WINDOW %%s %%s' %% (context.size().width(), context.size().height()))
-    print('RATIO %%s' %% (context.devicePixelRatio(),))
+    window = context.window
+    print('WINDOW %%s %%s' %% (window.size().width(), window.size().height()))
+    print('RATIO %%s' %% (window.devicePixelRatio(),))
 finally:
     context.releaseWindow()
 """ % (ASKED,)
@@ -81,9 +82,9 @@ def test_it_knows_its_size(built):
     Qt sizes a window in logical pixels and a scaled display renders more than
     that: at 125% a 320x240 window is a 400x300 framebuffer. The viewport has
     to be the pixels GL actually draws, or the rest of the window is left
-    undrawn -- which is why ``QtContext.framebufferSize`` multiplies by the
-    device pixel ratio, and why the glfw backend takes the framebuffer size
-    rather than the requested one.
+    undrawn -- which is why ``QtWindowSystem.drawableSize`` multiplies by the
+    device pixel ratio, and why the glfw window system takes the framebuffer
+    size rather than the requested one.
     """
     if 'no drawable GL surface' in built.stderr:
         pytest.skip('this Qt platform plugin gives no drawable GL surface')
