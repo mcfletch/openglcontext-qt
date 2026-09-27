@@ -431,8 +431,43 @@ def test_closing_a_view_does_not_take_the_host_program_with_it(context_factory):
     """A context inside somebody else's Qt application is one view in it, and
     escape must not end their process."""
     context = context_factory(size=(160, 120))
+    closed = context.window
     context.OnQuit()            # returning at all is the claim: no exit
-    assert not context.window.isVisible()
+    assert not closed.isVisible()
+
+
+def test_a_released_window_is_gone_from_the_context(context_factory):
+    context = context_factory(size=(160, 120))
+    context.OnQuit()
+    assert context.window is None
+
+
+class _Failed(Exception):
+    """Raised part-way through building a context."""
+
+
+def test_a_context_that_fails_to_build_gives_its_window_back(context_factory):
+    """No window and no GL context outlive a failed construction, and no cache
+    is told about a context none of them saw."""
+    made = []
+    released = []
+
+    class Failing(qtcontext.QtContext):
+        def createWindowSystem(self, definition):
+            made.append(super().createWindowSystem(definition))
+            return made[0]
+
+        def setupCallbacks(self):
+            raise _Failed()
+
+        def releaseContextResources(self, handle=None):
+            released.append(handle)
+
+    with pytest.raises(_Failed):
+        context_factory(Failing, size=(160, 120))
+    assert made[0].window is None
+    assert made[0].glContext is None
+    assert released == []
 
 
 def test_quitting_twice_is_quitting_once(context_factory):

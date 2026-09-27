@@ -302,6 +302,8 @@ class QtWindowSystem(WindowSystem):
     #: Set while the context is shutting down, so the close event its own
     #: close raises does not start the shutdown again.
     quitting = False
+    #: The window :meth:`release` let go of, held until :meth:`quit` closes it.
+    closing: Optional[QtWindow] = None
     renderTimerId: Optional[int] = None
     #: True when the pointer is hidden and grabbed for a mouse-look mode.
     pointerGrabbed = False
@@ -483,6 +485,24 @@ class QtWindowSystem(WindowSystem):
         # whenever the last of them happens to fall out of scope.
         self.glContext = None
         del glContext
+        # Held rather than destroyed: this runs inside the window's own close
+        # event when the user closes it, and a QWindow deleted there is used
+        # after it is freed once the handler returns.  :meth:`quit` closes it.
+        self.closing, self.window = self.window, None
+
+    def abandon(self) -> None:
+        """Destroy the GL context, then the window, telling no cache
+
+        In that order, for the reason :meth:`release` gives.  The window is
+        made before the GL context, so it is destroyed whether or not the GL
+        context was.  Construction is not inside any of the window's events,
+        so the window can go at once.
+        """
+        self.stopRenderTimer()
+        self.glContext = None
+        window, self.window = self.window, None
+        if window is not None:
+            window.destroy()
 
     def quit(self) -> bool:
         """Close the window; end the process only if this started it
@@ -505,8 +525,8 @@ class QtWindowSystem(WindowSystem):
         self.finished = True
         self.setPointerCapture(False)
         self.release()
-        if self.window is not None:
-            self.window.close()
+        if self.closing is not None:
+            self.closing.close()
         return self.ownsApplication
 
     def container(self, parent: Any = None) -> Any:
