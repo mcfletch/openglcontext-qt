@@ -49,7 +49,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
+dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "mypy", "tomli; python_version < '3.11'"]
 
 # OpenGLContext reads this group to learn which window systems are installed,
 # without importing any of them: `windowsystem='qt'` resolves through it.

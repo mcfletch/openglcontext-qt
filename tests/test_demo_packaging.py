@@ -16,11 +16,16 @@ See `OpenGLContext_qt/demos/packaging/README.md`.
 import importlib
 import os
 import runpy
-import tomllib
+import sys
 
 from OpenGLContext import packaging
 
 import OpenGLContext_qt
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 PACKAGING = os.path.join(os.path.dirname(OpenGLContext_qt.__file__),
                          'demos', 'packaging')
